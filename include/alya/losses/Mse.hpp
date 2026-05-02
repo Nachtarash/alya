@@ -5,6 +5,7 @@
 #include <alya/losses/Loss.hpp>
 #include <alya/core/tensor/Tensor2D.hpp>
 #include <alya/core/memory/Device.hpp>
+#include <alya/core/memory/TensorStorageBase.hpp>
 #include <alya/core/precision/PrecisonTypes.cuh>
 #include <alya/core/precision/PrecisionUtils.cuh>
 
@@ -20,14 +21,10 @@ using storageT = typename Precision<P>::storageT;
 using computeT = typename Precision<P>::computeT;
 
     internal::lossResult<P> forward(const Tensor<P, 2>& logits, const Tensor<P, 2>& targets) override {
-        switch(logits.device().type) {
-            case DeviceType::CPU:
-                return forwardCpu(logits, targets);
-            case DeviceType::GPU:
-                return forwardGpu(logits, targets);
-            default:
-                throw std::runtime_error("Unknown device");
-        }
+        return logits.deviceDispatcher(
+            "mseForward",
+            [&] { return forwardCpu(logits, targets); },
+            [&] { return forwardGpu(logits, targets); });
     }
 
 private:

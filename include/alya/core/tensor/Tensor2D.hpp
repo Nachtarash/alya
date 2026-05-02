@@ -4,7 +4,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cmath>
-#include <iostream>
 
 #include <alya/core/memory/TensorStorageBase.hpp>
 #include <alya/core/tensor/Tensorbase.hpp>
@@ -16,6 +15,7 @@
 #include <alya/core/precision/PrecisionUtils.cuh>
 #include <alya/activation/ActivationCpu.hpp>
 #include <alya/activation/ActivationGpu.cuh>
+#include <alya/profiling/Print.hpp>
 
 namespace alya {
 
@@ -25,9 +25,6 @@ class Tensor<P, 2> : private internal::TensorStorageBase<typename Precision<P>::
 private:
     size_t rows = 0;
     size_t cols = 0;
-
-    //template <typename U, size_t D>
-    //friend class Tensor;
 
 public:
     using storageT = typename Precision<P>::storageT;
@@ -42,6 +39,7 @@ public:
     using internal::TensorStorageBase<typename Precision<P>::storageT>::toGPU;
     using internal::TensorStorageBase<typename Precision<P>::storageT>::cpuData;
     using internal::TensorStorageBase<typename Precision<P>::storageT>::gpuData;
+    using internal::TensorStorageBase<typename Precision<P>::storageT>::TensorClone;
 
     Tensor() = default;
     Tensor(size_t r, size_t c, Device dev = Device{}) : internal::TensorStorageBase<storageT>(r * c * sizeof(storageT), dev), rows(r), cols(c) {}
@@ -63,12 +61,14 @@ public:
 
     void BYTES() const { 
        size_t bytes = rows * cols * sizeof(storageT);
-       std::cout << "Bytes: " << bytes << std::endl;
+        print("BYTES: ", bytes, Endl{});
     }
 
     Tensor emptyLike() const { return Tensor(rows, cols, device()); }
     
-    Tensor clone() const;
+    Tensor clone() const {
+        return TensorClone(*this, emptyLike());
+    }
 
     /// @brief Tensor(x, cols)
     Tensor getRow(size_t rowIdx) {
@@ -86,54 +86,36 @@ public:
     }
 
     /// @brief print Tensor
-    void print() const {
+    void printTensor() const {
         const storageT* data = cpuData();
 
         for(size_t i = 0; i < rows; i++) {
             for(size_t j = 0; j < cols; j++) {
                 computeT val = toCompute(data[offset(i, j)]);
 
-                std::cout << val << ' ';
+                print(val, " ");
             }
 
-            std::cout << std::endl;
+            print(Endl{});
         }
     }
 
     /// @brief f(Tensor)
     template <typename Op>
     Tensor activate() const {
-        Tensor out(rows, cols, storage -> device);
-        size_t N = rows * cols;
-
-        if(device().type == DeviceType::CPU) {
-            activationCpu::applyCpu<Op>(cpuData(), out.cpuData(), N);
-        } else {
-            const_cast<Tensor*>(this) -> toGPU();
-            out.toGPU();
-
-            activationGpu::applyGpu<Op>(gpuData(), out.gpuData(), N);
-        }
-
-        return out;
+        return deviceDispatcher(
+            "activate",
+            [&] { return TensorLinearOpsCpu::activateCpu<Tensor, Op>(*this); },
+            [&] { return TensorLinearOpsGpu::activateGpu<Tensor, Op>(*this); });
     }
 
-    /// @brief f'(Tensor)
+    /// @brief gradOut * f'(Tensor)
     template <typename Op>
-    Tensor derivative() const {
-        Tensor y(rows, cols, storage -> device);
-        size_t N = rows * cols;
-
-        if(device().type == DeviceType::CPU) {
-            activationCpu::derivativeCpu<Op>(cpuData(), y.cpuData(), N);
-        } else {
-            const_cast<Tensor*>(this) -> toGPU();
-            y.toGPU();
-
-            activationGpu::derivativeGpu<Op>(gpuData(), y.gpuData(), N);
-        }
-
-        return y;
+    Tensor activationBackward(const Tensor& gradOut, const Tensor& a) const {
+        return deviceDispatcher(
+            "activationBackward",
+            [&] { return TensorLinearOpsCpu::activationBackwardCpu<Tensor, Op>(*this, gradOut, a); },
+            [&] { return TensorLinearOpsGpu::activationBackwardGpu<Tensor, Op>(*this, gradOut, a); });
     }
 
     //for gpu implementation

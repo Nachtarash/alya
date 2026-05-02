@@ -2,12 +2,14 @@
 
 #include <cstddef>
 #include <cstdlib>
-#include <stdexcept>
+#include <iostream>
 #include <string>
 
 #include <alya/core/memory/Device.hpp>
 #include <alya/core/memory/Storage.hpp>
-#include <alya/core/memory/TensorStorageCuda.hpp>
+#include <alya/core/memory/TensorStorageCuda.cuh>
+#include <alya/profiling/ErrorMessage.hpp>
+#include <alya/profiling/Print.hpp>
 
 namespace alya::internal {
 
@@ -39,7 +41,7 @@ protected:
             if(!storage -> cpuPtr) {
                 delete storage;
                 storage = nullptr;
-                throw std::runtime_error("CPU: malloc failed");
+                ERRORMESSAGE("malloc faild");
             }
 
             std::memset(storage -> cpuPtr, 0, storage -> bytes);
@@ -163,12 +165,17 @@ public:
         }
     }
 
+    template <typename TensorType>
+    TensorType TensorClone(const TensorType& src, TensorType out) const {
+        return TensorCloneCuda(src, out);
+    }
+
     void printDevice() const{
         device();
 
         switch(storage -> device.type) {
-            case DeviceType::CPU : std::cout << "Device: CPU\n" << std::endl; break;
-            case DeviceType::GPU : std::cout << "Device: GPU\n" << std::endl; break;
+            case DeviceType::CPU : print("Device: CPU\n", Endl{}); break;
+            case DeviceType::GPU : print("Device: GPU\n", Endl{}); break;
         }
     }
 
@@ -177,7 +184,9 @@ public:
         switch(storage -> device.type) {
             case DeviceType::CPU: return std::forward<CpuFn>(cpuFn)();
             case DeviceType::GPU: return std::forward<GpuFn>(gpuFn)();
-            default: throw std::runtime_error(std::string(fnName) + ": Unknown Device");
+            default: 
+                eprint(fnName, ": Unknown Device");
+                std::exit(1);
         }
     }
 
@@ -186,7 +195,9 @@ public:
         switch(storage -> device.type) {
             case DeviceType::CPU: return std::forward<CpuFn>(cpuFn)();
             case DeviceType::GPU: return std::forward<GpuFn>(gpuFn)();
-            default: throw std::runtime_error(std::string(fnName) + ": Unknown Device");
+            default: 
+                eprint(fnName, ": Unknown Device");
+                std::exit(1);
         }
     }
 };

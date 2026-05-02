@@ -1,11 +1,11 @@
 #pragma once
 
 #include <cmath>
-#include <stdexcept>
 #include <vector>
 
 #include <alya/core/data/Dataset.hpp>
 #include <alya/core/precision/PrecisionUtils.cuh>
+#include <alya/profiling/ErrorMessage.hpp>
 
 namespace alya {
 
@@ -31,7 +31,7 @@ public:
     //compute global mean/std from all samples
     void computeGlobalStats(const internal::dataSet<P>& samples) {
         if(samples.data.empty()) {
-            throw std::runtime_error("inputNorm: computeStatsGlobal: samples have no data"); 
+            ERRORMESSAGE("samples have no data");
         }
 
         computeT mean = computeT(0);
@@ -65,7 +65,7 @@ public:
 
             case NormType::ZERO_MEAN_STD__LOKAL: {
                 if(samples.inputDim == 0) {
-                    throw std::runtime_error("inputNorm: ZERO_MEAN_STD__LOKAL: sample size is 0");      //inputdim is calculated in loader.hpp near : if(first sample)
+                    ERRORMESSAGE("sample size is 0");    //inputdim is calculated in loader.hpp near : if(first sample)
                 }
 
                 size_t numSamples = samples.data.size() / samples.inputDim;
@@ -104,7 +104,7 @@ public:
                 break;
 
             default:
-                throw std::runtime_error("inputNorm: Unknown normilization type");
+                ERRORMESSAGE("Unknown normilization type");
         }
     }
 };

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <iostream>
-#include <iomanip>
 #include <fstream>
 #include <string>
 #include <cstddef>
@@ -13,6 +11,8 @@
 #include <alya/layer/MLP.hpp>
 #include <alya/losses/Loss.hpp>
 #include <alya/profiling/Timer.hpp>
+#include <alya/profiling/ErrorMessage.hpp>
+#include <alya/profiling/Print.hpp>
 
 namespace alya {
 
@@ -155,29 +155,26 @@ public:
     }
 
     void validate() {
-        std::cout << "=== Validator ===" << std::endl;
-        std::cout << "Loaded samples: " << dataset.dataSize() << " | Data per sample: " << inputDim << std::endl;
+        print("=== Validator ===\n");
+        print("Loaded samples: ", dataset.dataSize(), " | Data per sample: ", inputDim, "\n");
 
         size_t numBatches = (dataset.dataSize() + batchsize - 1) / batchsize;
-
         computeT lossSum = computeT(0);
         computeT accSum = computeT(0);
         size_t batchsWithAcc = 0;
-        
         double totalBatchTime = 0.0;
-
         Timer timerEpoch;
         timerEpoch.start();
 
         if(loadFiles) { //---------------- does not work right now -------------------------
-            std::cout << "Loaded parameters from file" << std::endl;
+            print("Loaded parameters from file");
 
             std::ifstream file_weights(wFilename, std::ios::binary);
             std::ifstream file_biases(bFilename, std::ios::binary);
 
             if(!file_weights.is_open() || !file_biases.is_open()) {
-                std::cerr << "Validator: cannot open files for weights and/or biases!\n";
-                return;
+                ERRORMESSAGE("Validator: cannot open files for weights and/or biases!\n");
+                std::exit(1);
             }
 
             for(auto* layer : model.getLayers()) {
@@ -227,7 +224,6 @@ public:
             internal::lossResult<P> result = loss.forward(out, target);
 
             lossSum += result.loss;
-
             computeT batchAcc = computeT(0);
 
             if(loss.isClassification()) {
@@ -266,13 +262,13 @@ public:
             double avgBatchTime = totalBatchTime / (i + 1);
 
             if(verbose) {
-                std::cout << "Batch " << i + 1 << "/" << numBatches << " | Loss: " << std::setprecision(6) << result.loss;
+                print("Batch ", i + 1, "/", numBatches, " | Loss: ", Fixed{6}, result.loss);
 
                 if(loss.isClassification()) {
-                    std::cout << " | Accuracy: " << std::setprecision(4) << batchAcc;
+                    print(" | Acc: ", Fixed{4}, batchAcc);
                 }
 
-                std::cout << " | Time: " << std::fixed << std::setprecision(3) << timerBatch.getTime() << "s" << " (avg: " << avgBatchTime << "s)" << std::endl;
+                print(" | Time: ", Fixed{3}, timerBatch.getTime(), "s (avg: ", avgBatchTime, "s)\n");
             }
         }
 
@@ -281,15 +277,13 @@ public:
         computeT lossAvg = lossSum / numBatches;
         computeT accAvg = (batchsWithAcc > 0) ? (accSum / static_cast<computeT>(batchsWithAcc)) : computeT(0);
 
-        std::cout << "=== Summary ===" << std::endl;
-        std::cout << "Avg Loss: " << std::setprecision(6) << lossAvg;
+        print("=== Epoch Summary ===\n", "Avg Loss: ", Fixed{6}, lossAvg);
 
         if(loss.isClassification()) {
-            std::cout << " |Avg Acc: " << std::setprecision(4) << accAvg;
+            print(" | Avg Acc: ", Fixed{4}, accAvg);
         }
 
-        std::cout << " |Duration: " << std::fixed << std::setprecision(3) << timerEpoch.getTime() << "s" << std::endl;
-        std::cout << std::endl;
+        print(" | Duration: ", Fixed{3}, timerEpoch.getTime(), "s\n", Endl{});
     }
 };
 

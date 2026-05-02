@@ -9,12 +9,10 @@
 #include <alya/core/precision/PrecisonTypes.cuh>
 #include <alya/core/precision/PrecisionUtils.cuh>
 #include <alya/activation/ActivationOps.cuh>
+#include <alya/profiling/CudaCheck.cuh>
 
 template <typename Op, typename T>
 __device__ inline T applyActivation(T x) { return Op::apply(x); }
-
-template <typename Op, typename T>
-__device__ inline T applyDerivative(T y) { return Op::derivativeFromOutput(y); }
 
 namespace MatmulConfig {
     constexpr int BLOCK_M = 8;
@@ -25,7 +23,7 @@ namespace MatmulConfig {
 
 //---------- KERNEL --------- 
 template <typename T, typename ActOp>
-__global__ void FusedForwardKernel(const T* __restrict__ input, const T* __restrict__ weights, const T* __restrict__ bias, T* __restrict__ a , int M, int K, int N) {
+__global__ void FusedForwardKernel(const T* __restrict__ input, const T* __restrict__ weights, const T* __restrict__ bias, T* __restrict__ z, T* __restrict__ a, int M, int K, int N) {
     const int THREAD_VALUES_Y = MatmulConfig::BLOCK_M * MatmulConfig::THREAD_TILE_SIZE;
     const int THREAD_VALUES_X = MatmulConfig::BLOCK_N * MatmulConfig::THREAD_TILE_SIZE;
     const int LOCAL_THREAD_Y = threadIdx.y;
@@ -85,30 +83,37 @@ __global__ void FusedForwardKernel(const T* __restrict__ input, const T* __restr
     v10 += b0;
     v11 += b1;
 
-    v00 = applyActivation<ActOp>(v00);
-    v01 = applyActivation<ActOp>(v01);
-    v10 = applyActivation<ActOp>(v10);
-    v11 = applyActivation<ActOp>(v11);
+    T z00 = v00, z01 = v01;
+    T z10 = v10, z11 = v11;
+
+    v00 = applyActivation<ActOp>(z00);
+    v01 = applyActivation<ActOp>(z01);
+    v10 = applyActivation<ActOp>(z10);
+    v11 = applyActivation<ActOp>(z11);
 
     if(GLOBAL_BLOCK_Y < M && GLOBAL_BLOCK_X < N) {
+        z[GLOBAL_BLOCK_Y * N + GLOBAL_BLOCK_X] = z00;
         a[GLOBAL_BLOCK_Y * N + GLOBAL_BLOCK_X] = v00;
     }
 
     if(GLOBAL_BLOCK_Y < M && GLOBAL_BLOCK_X + 1 < N) {
+        z[GLOBAL_BLOCK_Y * N + GLOBAL_BLOCK_X + 1] = z01;
         a[GLOBAL_BLOCK_Y * N + GLOBAL_BLOCK_X + 1] = v01;
     }
 
     if((GLOBAL_BLOCK_Y + 1) < M && GLOBAL_BLOCK_X < N) {
+        z[(GLOBAL_BLOCK_Y + 1) * N + GLOBAL_BLOCK_X] = z10;
         a[(GLOBAL_BLOCK_Y + 1) * N + GLOBAL_BLOCK_X] = v10;
     }
 
     if((GLOBAL_BLOCK_Y + 1) < M && (GLOBAL_BLOCK_X + 1) < N) {
+        z[(GLOBAL_BLOCK_Y + 1) * N + GLOBAL_BLOCK_X + 1] = z11;
         a[(GLOBAL_BLOCK_Y + 1) * N + GLOBAL_BLOCK_X + 1] = v11;
     }
 }
 
 template <typename T, typename ActOp>
-__global__ void FusedDeltaDbKernel(const T* __restrict__ a, T* __restrict__ z, T* __restrict__ db, int rows, int cols) {
+__global__ void FusedDeltaDbKernel(const T* __restrict__ gradOut, T* __restrict__ z, const T* __restrict__ a, T* __restrict__ db, int rows, int cols) {
     extern __shared__ unsigned char cache[];
     T* shmem = reinterpret_cast<T*>(cache);
 
@@ -120,7 +125,7 @@ __global__ void FusedDeltaDbKernel(const T* __restrict__ a, T* __restrict__ z, T
 
     for(int thread_x = LOCAL_THREAD_X; thread_x < rows; thread_x += blockDim.x) {
         int idx = thread_x * cols + GLOBAL_BLOCK_X;
-        T value = z[idx] * applyDerivative<ActOp>(a[idx]);
+        T value = ActOp::backwardScalar(gradOut[idx], z[idx], a[idx]);
 
         z[idx] = value;
 
@@ -297,88 +302,109 @@ namespace alya {
 template <typename P, template <typename> class ActOp>
 Tensor<P, 2> FC<P, ActOp>::forwardGpu(const Tensor<P, 2>& inputIn) {
     if(inputIn.device().type == DeviceType::GPU) {
-        input = inputIn;
+        cache.input = inputIn;
     } else {
-        input = inputIn.clone();
-    }
-    if(input.device().type != DeviceType::GPU) {
-        input.toGPU();
-    }
-    if(a.numRows() != input.numRows() || a.numCols() != weights.numCols() || a.device().type != weights.device().type) {
-        a = Tensor<P, 2>(input.numRows(), weights.numCols(), weights.device());
+        cache.input = inputIn.clone();
+        cache.input.toGPU();
     }
 
-    using storageT = Precision<P>::storageT;
-    using computeT = Precision<P>::computeT;
+    if(cache.act.z.numRows() != cache.input.numRows() || cache.act.z.numCols() != weights.numCols() || cache.act.z.device().type != weights.device().type) {
+        cache.act.z = Tensor<P, 2>(cache.input.numRows(), weights.numCols(), weights.device());
+    }
+    if(cache.act.a.numRows() != cache.input.numRows() || cache.act.a.numCols() != weights.numCols() || cache.act.a.device().type != weights.device().type) {
+        cache.act.a = Tensor<P, 2>(cache.input.numRows(), weights.numCols(), weights.device());
+    }
+
     using ActOpT = ActOp<storageT>;
 
-    const storageT* d_input = input.gpuData();
+    const storageT* d_input = cache.input.gpuData();
     const storageT* d_weights = weights.gpuData();
     const storageT* d_bias = bias.gpuData();
-    storageT* d_a = a.gpuData();
+    storageT* d_z = cache.act.z.gpuData();
+    storageT* d_a = cache.act.a.gpuData();
 
     dim3 blockSize(MatmulConfig::BLOCK_N, MatmulConfig::BLOCK_M);
-    dim3 numBlocks((weights.numCols() + (MatmulConfig::BLOCK_N * 2) - 1) / (MatmulConfig::BLOCK_N * 2), (input.numRows() + (MatmulConfig::BLOCK_M * 2) - 1) / (MatmulConfig::BLOCK_M * 2));
+    dim3 numBlocks(
+        (weights.numCols() + (MatmulConfig::BLOCK_N * 2) - 1) / (MatmulConfig::BLOCK_N * 2),
+        (cache.input.numRows() + (MatmulConfig::BLOCK_M * 2) - 1) / (MatmulConfig::BLOCK_M * 2));
 
-    FusedForwardKernel<storageT, ActOpT><<<numBlocks, blockSize>>>(d_input, d_weights, d_bias, d_a, static_cast<int>(input.numRows()),static_cast<int>(input.numCols()),static_cast<int>(weights.numCols()));
+    FusedForwardKernel<storageT, ActOpT><<<numBlocks, blockSize>>>(
+        d_input,
+        d_weights,
+        d_bias,
+        d_z,
+        d_a,
+        static_cast<int>(cache.input.numRows()),
+        static_cast<int>(cache.input.numCols()),
+        static_cast<int>(weights.numCols()));
 
-    cudaError_t err = cudaDeviceSynchronize();
+    CUDA_CHECK(cudaDeviceSynchronize());
 
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: FC: forwardGpu: " + std::string(cudaGetErrorString(err)));
-    }
-
-    return a;
+    return cache.act.a;
 }
 
 template <typename P, template <typename> class ActOp>
 Tensor<P, 2> FC<P, ActOp>::backwardGpu(const Tensor<P, 2>& gradOut) {
-    if(gradOut.device().type == DeviceType::GPU) {
-        z = gradOut;
-    } else {
-        z = gradOut.clone();
-    }
-    if(z.device().type != DeviceType::GPU) {
-        z.toGPU();
-    }
-    if(dw.numRows() != input.numCols() || dw.numCols() != z.numCols() || dw.device().type != z.device().type) {
-        dw = Tensor<P, 2>(input.numCols(), z.numCols(), z.device());
+    Tensor<P, 2> gradOutGpu = (gradOut.device().type == DeviceType::GPU) ? gradOut : gradOut.clone();
+    if(gradOutGpu.device().type != DeviceType::GPU) {
+        gradOutGpu.toGPU();
     }
 
-    if(db.numRows() != bias.numRows() || db.numCols() != bias.numCols() || db.device().type != bias.device().type) {
-        db = Tensor<P, 2>(1, bias.numCols(), bias.device());
-    }
-
-    using storageT = Precision<P>::storageT;
-    using computeT = Precision<P>::computeT;
+    using storageT = typename Precision<P>::storageT;
     using ActOpT = ActOp<storageT>;
 
-    storageT* d_z = z.gpuData();
-    storageT* d_a = a.gpuData();
-    storageT* d_dw = dw.gpuData();
-    storageT* d_db = db.gpuData();
-    storageT* d_input = input.gpuData();
-    storageT* d_weights = weights.gpuData();
+    if(dw.numRows() != cache.input.numCols() || dw.numCols() != cache.act.z.numCols() || dw.device().type != cache.act.z.device().type) {
+        dw = Tensor<P, 2>(cache.input.numCols(), cache.act.z.numCols(), cache.act.z.device());
+    }
+    if(db.numRows() != 1 || db.numCols() != cache.act.z.numCols() || db.device().type != cache.act.z.device().type) {
+        db = Tensor<P, 2>(1, cache.act.z.numCols(), cache.act.z.device());
+    }
 
-    Tensor<P, 2> gradInput(input.numRows(), input.numCols(), input.device());
-    storageT* d_gradIn = gradInput.gpuData();
+    Tensor<P, 2> gradInput(cache.input.numRows(), cache.input.numCols(), cache.input.device());
+
+    const storageT* d_gradOut = gradOutGpu.gpuData();
+    storageT* d_z = cache.act.z.gpuData();
+    const storageT* d_a = cache.act.a.gpuData();
+    storageT* d_db = db.gpuData();
+    const storageT* d_input = cache.input.gpuData();
+    const storageT* d_weights = weights.gpuData();
+    storageT* d_dw = dw.gpuData();
+    storageT* d_gradInput = gradInput.gpuData();
 
     int blockSizeDb = 256;
-    int gridSizeDb = a.numCols();
+    int gridSizeDb = static_cast<int>(cache.act.a.numCols());
     int shmem_bytes = blockSizeDb * sizeof(storageT);
     dim3 blockSize(MatmulConfig::BLOCK_N, MatmulConfig::BLOCK_M);
-    dim3 gridSizeDw((z.numCols() + (MatmulConfig::BLOCK_N * 2) - 1) / (MatmulConfig::BLOCK_N * 2), (input.numCols() + (MatmulConfig::BLOCK_M * 2) - 1) / (MatmulConfig::BLOCK_M * 2));
-    dim3 gridSizeGradInput((weights.numRows() + (MatmulConfig::BLOCK_N * 2) - 1) / (MatmulConfig::BLOCK_N * 2), (z.numRows() + (MatmulConfig::BLOCK_M * 2) - 1) / (MatmulConfig::BLOCK_M * 2));
+    dim3 gridSizeDw(
+        (cache.act.z.numCols() + (MatmulConfig::BLOCK_N * 2) - 1) / (MatmulConfig::BLOCK_N * 2),
+        (cache.input.numCols() + (MatmulConfig::BLOCK_M * 2) - 1) / (MatmulConfig::BLOCK_M * 2));
+    dim3 gridSizeGradInput(
+        (weights.numRows() + (MatmulConfig::BLOCK_N * 2) - 1) / (MatmulConfig::BLOCK_N * 2),
+        (cache.act.z.numRows() + (MatmulConfig::BLOCK_M * 2) - 1) / (MatmulConfig::BLOCK_M * 2));
 
-    FusedDeltaDbKernel<storageT, ActOpT><<<gridSizeDb, blockSizeDb, shmem_bytes>>>(d_a, d_z, d_db, static_cast<int>(a.numRows()), static_cast<int>(a.numCols()));
-    dwKernel<storageT><<<gridSizeDw, blockSize>>>(d_input, d_z, d_dw, static_cast<int>(input.numRows()), static_cast<int>(input.numCols()), static_cast<int>(z.numCols()));
-    gradInKernel<storageT><<<gridSizeGradInput, blockSize>>>(d_z, d_weights, d_gradIn, static_cast<int>(z.numRows()), static_cast<int>(weights.numRows()), static_cast<int>(z.numCols()));
-    
-    cudaError_t err = cudaDeviceSynchronize();
+    FusedDeltaDbKernel<storageT, ActOpT><<<gridSizeDb, blockSizeDb, shmem_bytes>>>(
+        d_gradOut,
+        d_z,
+        d_a,
+        d_db,
+        static_cast<int>(cache.act.a.numRows()),
+        static_cast<int>(cache.act.a.numCols()));
+    dwKernel<storageT><<<gridSizeDw, blockSize>>>(
+        d_input,
+        d_z,
+        d_dw,
+        static_cast<int>(cache.input.numRows()),
+        static_cast<int>(cache.input.numCols()),
+        static_cast<int>(cache.act.z.numCols()));
+    gradInKernel<storageT><<<gridSizeGradInput, blockSize>>>(
+        d_z,
+        d_weights,
+        d_gradInput,
+        static_cast<int>(cache.act.z.numRows()),
+        static_cast<int>(weights.numRows()),
+        static_cast<int>(cache.act.z.numCols()));
 
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: FC: backwardGpu: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     return gradInput;
 }
@@ -412,5 +438,15 @@ template class FC<bf16, TanhOp>;
 template class FC<fp16, TanhOp>;
 template class FC<fp32, TanhOp>;
 template class FC<fp64, TanhOp>;
+
+template class FC<bf16, GELUOp>;
+template class FC<fp16, GELUOp>;
+template class FC<fp32, GELUOp>;
+template class FC<fp64, GELUOp>;
+
+template class FC<bf16, SwishOp>;
+template class FC<fp16, SwishOp>;
+template class FC<fp32, SwishOp>;
+template class FC<fp64, SwishOp>;
 
 }   //namespace alya

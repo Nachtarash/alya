@@ -16,6 +16,7 @@
 #include <alya/losses/Huber.hpp>
 #include <alya/losses/Hinge.hpp>
 #include <alya/losses/CosineSimilarity.hpp>
+#include <alya/profiling/CudaCheck.cuh>
 
 
 template <typename T>
@@ -354,7 +355,7 @@ internal::lossResult<P> CrossEntropyLoss<P>::forwardGpu(const Tensor<P, 2>& logi
     storageT* d_gradients = grad.gpuData();
 
     storageT* d_lossPartial;
-    cudaMalloc(&d_lossPartial, batch * sizeof(storageT));
+    CUDA_CHECK(cudaMalloc(&d_lossPartial, batch * sizeof(storageT)));
 
     const dim3 blockSize(classes);
     const dim3 gridSize(batch);
@@ -362,11 +363,7 @@ internal::lossResult<P> CrossEntropyLoss<P>::forwardGpu(const Tensor<P, 2>& logi
 
 
     ceSoKernel<storageT><<<gridSize, blockSize, shmemSize>>>(d_logits, d_targets, d_gradients, d_lossPartial, classes);
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: CrossEntropyLoss: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     size_t current = batch;
     while(current > 1) {
@@ -379,8 +376,8 @@ internal::lossResult<P> CrossEntropyLoss<P>::forwardGpu(const Tensor<P, 2>& logi
     }
 
     storageT loss;
-    cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost);
-    cudaFree(d_lossPartial);
+    CUDA_CHECK(cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaFree(d_lossPartial));
 
     computeT lossVal = toCompute(loss);
     lossVal /= static_cast<computeT>(batch);
@@ -409,7 +406,7 @@ internal::lossResult<P> cosineSimilarityLoss<P>::forwardGpu(const Tensor<P, 2>& 
     storageT* d_gradients = grad.gpuData();
 
     storageT* d_lossPartial;
-    cudaMalloc(&d_lossPartial, batch * sizeof(storageT));
+    CUDA_CHECK(cudaMalloc(&d_lossPartial, batch * sizeof(storageT)));
 
     const dim3 blockSize(batch);
     const dim3 gridSize(classes);
@@ -417,11 +414,7 @@ internal::lossResult<P> cosineSimilarityLoss<P>::forwardGpu(const Tensor<P, 2>& 
 
 
     cosineSimilarityKernel<storageT><<<blockSize, gridSize, shmemSize>>>(d_logits, d_targets, d_gradients, d_lossPartial, eps, batch, classes);
-    cudaError_t err = cudaDeviceSynchronize();
-    
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: cosineSimilarityLos: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     size_t current = batch;
     while(current > 1) {
@@ -432,8 +425,8 @@ internal::lossResult<P> cosineSimilarityLoss<P>::forwardGpu(const Tensor<P, 2>& 
     }
 
     storageT loss;
-    cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost);
-    cudaFree(d_lossPartial);
+    CUDA_CHECK(cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaFree(d_lossPartial));
 
     computeT lossVal = toCompute(loss);
     lossVal /= static_cast<computeT>(batch);
@@ -461,7 +454,7 @@ internal::lossResult<P> hingeLoss<P>::forwardGpu(const Tensor<P, 2>& logits, con
     storageT* d_gradients = grad.gpuData();
 
     storageT* d_lossPartial;
-    cudaMalloc(&d_lossPartial, batch * sizeof(storageT));
+    CUDA_CHECK(cudaMalloc(&d_lossPartial, batch * sizeof(storageT)));
 
     const dim3 blockSize(batch);
     const dim3 gridSize(classes);
@@ -469,11 +462,7 @@ internal::lossResult<P> hingeLoss<P>::forwardGpu(const Tensor<P, 2>& logits, con
 
 
     hingeKernel<storageT><<<blockSize, gridSize, shmemSize>>>(d_logits, d_targets, d_gradients, d_lossPartial, N);
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: hingeLoss: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     size_t current = batch;
     while(current > 1) {
@@ -484,8 +473,8 @@ internal::lossResult<P> hingeLoss<P>::forwardGpu(const Tensor<P, 2>& logits, con
     }
 
     storageT loss;
-    cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost);
-    cudaFree(d_lossPartial);
+    CUDA_CHECK(cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaFree(d_lossPartial));
     
     computeT lossVal = toCompute(loss);
     lossVal /= static_cast<computeT>(batch);
@@ -515,7 +504,7 @@ internal::lossResult<P> huberLoss<P>::forwardGpu(const Tensor<P, 2>& logits, con
     storageT* d_gradients = grad.gpuData();
 
     storageT* d_lossPartial;
-    cudaMalloc(&d_lossPartial, batch * sizeof(storageT));
+    CUDA_CHECK(cudaMalloc(&d_lossPartial, batch * sizeof(storageT)));
 
     const dim3 blockSize(batch);
     const dim3 gridSize(classes);
@@ -523,11 +512,7 @@ internal::lossResult<P> huberLoss<P>::forwardGpu(const Tensor<P, 2>& logits, con
 
 
     huberKernel<storageT><<<blockSize, gridSize, shmemSize>>>(d_logits, d_targets, d_gradients, d_lossPartial, delta, N);
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: huberLoss: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     size_t current = batch;
     while(current > 1) {
@@ -538,8 +523,8 @@ internal::lossResult<P> huberLoss<P>::forwardGpu(const Tensor<P, 2>& logits, con
     }
 
     storageT loss;
-    cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost);
-    cudaFree(d_lossPartial);
+    CUDA_CHECK(cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaFree(d_lossPartial));
 
     computeT lossVal = toCompute(loss);
     lossVal /= static_cast<computeT>(batch);
@@ -566,7 +551,7 @@ internal::lossResult<P> klDivergenceLoss<P>::forwardGpu(const Tensor<P, 2>& logi
     storageT* d_gradients = grad.gpuData();
 
     storageT* d_lossPartial;
-    cudaMalloc(&d_lossPartial, batch * sizeof(storageT));
+    CUDA_CHECK(cudaMalloc(&d_lossPartial, batch * sizeof(storageT)));
 
     const dim3 blockSize(batch);
     const dim3 gridSize(classes);
@@ -574,11 +559,7 @@ internal::lossResult<P> klDivergenceLoss<P>::forwardGpu(const Tensor<P, 2>& logi
 
 
     klDivergenceKernel<storageT><<<blockSize, gridSize, shmemSize>>>(d_logits, d_targets, d_gradients, d_lossPartial, classes);
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: klDivergenceLoss: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     size_t current = batch;
     while(current > 1) {
@@ -589,8 +570,8 @@ internal::lossResult<P> klDivergenceLoss<P>::forwardGpu(const Tensor<P, 2>& logi
     }
 
     storageT loss;
-    cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost);
-    cudaFree(d_lossPartial);
+    CUDA_CHECK(cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaFree(d_lossPartial));
 
     computeT lossVal = toCompute(loss);
     lossVal /= static_cast<computeT>(batch);
@@ -615,17 +596,13 @@ internal::lossResult<P> bceLoss<P>::forwardGpu(const Tensor<P, 2>& logits, const
     storageT* d_gradients = grad.gpuData();
 
     storageT* d_lossPartial;
-    cudaMalloc(&d_lossPartial, N * sizeof(storageT));
+    CUDA_CHECK(cudaMalloc(&d_lossPartial, N * sizeof(storageT)));
 
     constexpr int blockSize = 256;
     const int gridSize = ((N + blockSize - 1) / blockSize);
 
     bceKernel<storageT><<<blockSize, gridSize>>>(d_logits, d_targets, d_gradients, d_lossPartial, N);
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: bceLoss: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     size_t current = N;
     while(current > 1) {
@@ -636,8 +613,8 @@ internal::lossResult<P> bceLoss<P>::forwardGpu(const Tensor<P, 2>& logits, const
     }
 
     storageT loss;
-    cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost);
-    cudaFree(d_lossPartial);
+    CUDA_CHECK(cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaFree(d_lossPartial));
 
     computeT lossVal = toCompute(loss);
     lossVal /= static_cast<computeT>(batch);
@@ -662,17 +639,13 @@ internal::lossResult<P> mseLoss<P>::forwardGpu(const Tensor<P, 2>& logits, const
     storageT* d_gradients = grad.gpuData();
 
     storageT* d_lossPartial;
-    cudaMalloc(&d_lossPartial, N * sizeof(storageT));
+    CUDA_CHECK(cudaMalloc(&d_lossPartial, N * sizeof(storageT)));
 
     constexpr int blockSize = 256;
     const int gridSize = ((N + blockSize - 1) / blockSize);
 
     mseKernel<storageT><<<blockSize, gridSize>>>(d_logits, d_targets, d_gradients, d_lossPartial, N);
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: mseLoss: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     size_t current = N;
     while(current > 1) {
@@ -683,8 +656,8 @@ internal::lossResult<P> mseLoss<P>::forwardGpu(const Tensor<P, 2>& logits, const
     }
 
     storageT loss;
-    cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost);
-    cudaFree(d_lossPartial);
+    CUDA_CHECK(cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaFree(d_lossPartial));
 
     computeT lossVal = toCompute(loss);
     lossVal /= static_cast<computeT>(batch);
@@ -709,17 +682,13 @@ internal::lossResult<P> maeLoss<P>::forwardGpu(const Tensor<P, 2>& logits, const
     storageT* d_gradients = grad.gpuData();
 
     storageT* d_lossPartial;
-    cudaMalloc(&d_lossPartial, N * sizeof(storageT));
+    CUDA_CHECK(cudaMalloc(&d_lossPartial, N * sizeof(storageT)));
 
     constexpr int blockSize = 256;
     const int gridSize = ((N + blockSize - 1) / blockSize);
 
     maeKernel<storageT><<<blockSize, gridSize>>>(d_logits, d_targets, d_gradients, d_lossPartial, N);
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: maeLoss: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     size_t current = N;
     while(current > 1) {
@@ -730,8 +699,8 @@ internal::lossResult<P> maeLoss<P>::forwardGpu(const Tensor<P, 2>& logits, const
     }
 
     storageT loss;
-    cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost);
-    cudaFree(d_lossPartial);
+    CUDA_CHECK(cudaMemcpy(&loss, d_lossPartial, sizeof(storageT), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaFree(d_lossPartial));
 
     computeT lossVal = toCompute(loss);
     lossVal /= static_cast<computeT>(batch);

@@ -1,7 +1,8 @@
 #pragma once
 
 #include <chrono>
-#include <iostream>
+
+#include <alya/profiling/Print.hpp>
 
 namespace alya::time {
 
@@ -51,7 +52,7 @@ public:
             endTimer = std::chrono::steady_clock::now();
             auto clock = std::chrono::duration<double>(endTimer - startTimer).count();
 
-            std::cout << "Time: " << clock << " s" << std::endl;
+            print("Time: ", clock, Endl{});
         }
     }
 
@@ -74,12 +75,12 @@ public:
     /// @tparam unit time unit (e.g. alya::time::seconds, or standard std::chrono::seconds)
     /// @note if using namespace alya, short time acronym are available (e.g. alya::time::ms)
     template <typename unit = std::chrono::seconds>
-    void print() const {
+    void printTime() const {
         auto end = (raiiVersion) ? std::chrono::steady_clock::now() : endTimer;
 
         using durationT = std::chrono::duration<double, typename unit::period>;     // duration<precision, ratio>
         auto clock = std::chrono::duration_cast<durationT>(end - startTimer).count();
-        std::cout << "Time: " << clock << time::unitName<unit>() << std::endl;
+        print("Time: ", clock, time::unitName<unit>(), Endl{});
     }
 
 };

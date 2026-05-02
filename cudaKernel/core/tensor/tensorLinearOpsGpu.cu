@@ -12,6 +12,7 @@
 #include <alya/core/precision/NumericLimits.cuh>
 #include <alya/core/data/ArgMinMaxContainer.hpp>
 #include <alya/core/ops/NumericalOps.cuh>
+#include <alya/profiling/CudaCheck.cuh>
 
 //----------- KERNEL ----------------
 
@@ -495,11 +496,7 @@ namespace alya::TensorLinearOpsGpu {
         const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
         elementwiseKernel<Functor, storageT><<<numBlocks, blockSize>>>(a, b, c, static_cast<int>(N));
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: elementwiseGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         return C;
     }
@@ -520,11 +517,7 @@ namespace alya::TensorLinearOpsGpu {
         const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
         elementwiseInplaceKernel<Functor, storageT><<<numBlocks, blockSize>>>(a, b, static_cast<int>(N));
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: elementwiseInplaceGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         return A;
     }
@@ -546,11 +539,7 @@ namespace alya::TensorLinearOpsGpu {
         const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
         unaryKernel<Functor, storageT><<<numBlocks, blockSize>>>(a, b, static_cast<int>(N));
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: unaryGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         return B;
     }
@@ -569,11 +558,7 @@ namespace alya::TensorLinearOpsGpu {
         const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
         unaryInplaceKernel<Functor, storageT><<<numBlocks, blockSize>>>(a, static_cast<int>(N));
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: unaryInplaceGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         return A;
     }
@@ -597,11 +582,7 @@ namespace alya::TensorLinearOpsGpu {
         const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
         scalarKernel<Functor, storageT><<<numBlocks, blockSize>>>(a, b, scalarVT, static_cast<int>(N));
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: scalarGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         return B;
     }
@@ -622,11 +603,7 @@ namespace alya::TensorLinearOpsGpu {
         const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
         scalarInplaceKernel<Functor, storageT><<<numBlocks, blockSize>>>(a, scalarVT, static_cast<int>(N));
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: scalarInplaceGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         return A;
     }
@@ -646,20 +623,20 @@ namespace alya::TensorLinearOpsGpu {
         int gridSize = (N + blockSize * itemsPerThread - 1) / (blockSize * itemsPerThread);
         
         int smCount;
-        cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0);
+        CUDA_CHECK(cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0));
 
         const int maxBlocks = smCount * 4;
         gridSize = std::min(gridSize, maxBlocks);
 
         storageT* d_partial;
-        cudaMalloc(&d_partial, gridSize * sizeof(storageT));
+        CUDA_CHECK(cudaMalloc(&d_partial, gridSize * sizeof(storageT)));
         
         sumSquaredKernel<storageT, blockSize, itemsPerThread><<<gridSize, blockSize>>>(a, d_partial, N);
         sumSquaredKernel<storageT, blockSize, itemsPerThread><<<1, blockSize>>>(d_partial, d_partial, gridSize);
 
         storageT result;
-        cudaMemcpy(&result, d_partial, sizeof(storageT), cudaMemcpyDeviceToHost);
-        cudaFree(d_partial);
+        CUDA_CHECK(cudaMemcpy(&result, d_partial, sizeof(storageT), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaFree(d_partial));
 
         return gpuSqrt<storageT>(result);
     }
@@ -689,11 +666,7 @@ namespace alya::TensorLinearOpsGpu {
         const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
         fillZeroKernel<<<numBlocks, blockSize>>>(a, static_cast<int>(N));
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: fillZeroGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         return A;
     }
@@ -711,11 +684,7 @@ namespace alya::TensorLinearOpsGpu {
         const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
         fillOneKernel<<<numBlocks, blockSize>>>(a, static_cast<int>(N));
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: fillOneGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         return A;
     }
@@ -736,11 +705,7 @@ namespace alya::TensorLinearOpsGpu {
         const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
         clipKernel<<<numBlocks, blockSize>>>(a, minValT, maxValT, static_cast<int>(N));
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: clipGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         return A;
     }
@@ -759,26 +724,21 @@ namespace alya::TensorLinearOpsGpu {
         int gridSize = (N + blockSize * itemsPerThread - 1) / (blockSize * itemsPerThread);
         
         int smCount;
-        cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0);
+        CUDA_CHECK(cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0));
 
         const int maxBlocks = smCount * 4;
         gridSize = std::min(gridSize, maxBlocks);
 
         storageT* d_partial;
-        cudaMalloc(&d_partial, gridSize * sizeof(storageT));
+        CUDA_CHECK(cudaMalloc(&d_partial, gridSize * sizeof(storageT)));
         
         sumKernel<storageT, blockSize, itemsPerThread><<<gridSize, blockSize>>>(a, d_partial, N);
         sumKernel<storageT, blockSize, itemsPerThread><<<1, blockSize>>>(d_partial, d_partial, gridSize);
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            cudaFree(d_partial);
-            throw std::runtime_error("GPU: sum/meanGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         storageT result;
-        cudaMemcpy(&result, d_partial, sizeof(storageT), cudaMemcpyDeviceToHost);
-        cudaFree(d_partial);
+        CUDA_CHECK(cudaMemcpy(&result, d_partial, sizeof(storageT), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaFree(d_partial));
 
         return result;
     }
@@ -804,26 +764,21 @@ namespace alya::TensorLinearOpsGpu {
         int gridSize = (N + blockSize * itemsPerThread - 1) / (blockSize * itemsPerThread);
         
         int smCount;
-        cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0);
+        CUDA_CHECK(cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0));
 
         const int maxBlocks = smCount * 4;
         gridSize = std::min(gridSize, maxBlocks);
 
         storageT* d_partial;
-        cudaMalloc(&d_partial, gridSize * sizeof(storageT));
+        CUDA_CHECK(cudaMalloc(&d_partial, gridSize * sizeof(storageT)));
         
         minKernel<storageT, blockSize, itemsPerThread><<<gridSize, blockSize>>>(a, d_partial, N);
         minKernel<storageT, blockSize, itemsPerThread><<<1, blockSize>>>(d_partial, d_partial, gridSize);
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            cudaFree(d_partial);
-            throw std::runtime_error("GPU: minGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         storageT result;
-        cudaMemcpy(&result, d_partial, sizeof(storageT), cudaMemcpyDeviceToHost);
-        cudaFree(d_partial);
+        CUDA_CHECK(cudaMemcpy(&result, d_partial, sizeof(storageT), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaFree(d_partial));
 
         return result;
     }
@@ -842,26 +797,21 @@ namespace alya::TensorLinearOpsGpu {
         int gridSize = (N + blockSize * itemsPerThread - 1) / (blockSize * itemsPerThread);
         
         int smCount;
-        cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0);
+        CUDA_CHECK(cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0));
 
         const int maxBlocks = smCount * 4;
         gridSize = std::min(gridSize, maxBlocks);
 
         storageT* d_partial;
-        cudaMalloc(&d_partial, gridSize * sizeof(storageT));
+        CUDA_CHECK(cudaMalloc(&d_partial, gridSize * sizeof(storageT)));
         
         maxKernel<storageT, blockSize, itemsPerThread><<<gridSize, blockSize>>>(a, d_partial, N);
         maxKernel<storageT, blockSize, itemsPerThread><<<1, blockSize>>>(d_partial, d_partial, gridSize);
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            cudaFree(d_partial);
-            throw std::runtime_error("GPU: maxGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         storageT result;
-        cudaMemcpy(&result, d_partial, sizeof(storageT), cudaMemcpyDeviceToHost);
-        cudaFree(d_partial);
+        CUDA_CHECK(cudaMemcpy(&result, d_partial, sizeof(storageT), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaFree(d_partial));
 
         return result;
     }
@@ -880,31 +830,26 @@ namespace alya::TensorLinearOpsGpu {
         int gridSize = (N + blockSize * itemsPerThread - 1) / (blockSize * itemsPerThread);
         
         int smCount;
-        cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0);
+        CUDA_CHECK(cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0));
 
         const int maxBlocks = smCount * 4;
         gridSize = std::min(gridSize, maxBlocks);
 
         ValIdx<storageT>* d_in;
-        cudaMalloc(&d_in, N * sizeof(ValIdx<storageT>));
+        CUDA_CHECK(cudaMalloc(&d_in, N * sizeof(ValIdx<storageT>)));
 
         ValIdx<storageT>* d_partial;
-        cudaMalloc(&d_partial, gridSize * sizeof(ValIdx<storageT>));
+        CUDA_CHECK(cudaMalloc(&d_partial, gridSize * sizeof(ValIdx<storageT>)));
 
         TtoValIdx<<<gridSize, blockSize>>>(a, d_in, N);
         
         argminKernel<storageT, blockSize, itemsPerThread><<<gridSize, blockSize>>>(d_in, d_partial, N);
         argminKernel<storageT, blockSize, itemsPerThread><<<1, blockSize>>>(d_partial, d_partial, gridSize);
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            cudaFree(d_partial);
-            throw std::runtime_error("GPU: argminGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         ValIdx<storageT> result;
-        cudaMemcpy(&result, d_partial, sizeof(ValIdx<storageT>), cudaMemcpyDeviceToHost);
-        cudaFree(d_partial);
+        CUDA_CHECK(cudaMemcpy(&result, d_partial, sizeof(ValIdx<storageT>), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaFree(d_partial));
 
         return result.idx;
     }
@@ -923,31 +868,26 @@ namespace alya::TensorLinearOpsGpu {
         int gridSize = (N + blockSize * itemsPerThread - 1) / (blockSize * itemsPerThread);
         
         int smCount;
-        cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0);
+        CUDA_CHECK(cudaDeviceGetAttribute(&smCount, cudaDevAttrMultiProcessorCount, 0));
 
         const int maxBlocks = smCount * 4;
         gridSize = std::min(gridSize, maxBlocks);
 
         ValIdx<storageT>* d_in;
-        cudaMalloc(&d_in, N * sizeof(ValIdx<storageT>));
+        CUDA_CHECK(cudaMalloc(&d_in, N * sizeof(ValIdx<storageT>)));
 
         ValIdx<storageT>* d_partial;
-        cudaMalloc(&d_partial, gridSize * sizeof(ValIdx<storageT>));
+        CUDA_CHECK(cudaMalloc(&d_partial, gridSize * sizeof(ValIdx<storageT>)));
 
         TtoValIdx<<<gridSize, blockSize>>>(a, d_in, N);
         
         argmaxKernel<storageT, blockSize, itemsPerThread><<<gridSize, blockSize>>>(d_in, d_partial, N);
         argmaxKernel<storageT, blockSize, itemsPerThread><<<1, blockSize>>>(d_partial, d_partial, gridSize);
-        cudaError_t err = cudaDeviceSynchronize();
-
-        if(err != cudaSuccess) {
-            cudaFree(d_partial);
-            throw std::runtime_error("GPU: argmaxGpu: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         ValIdx<storageT> result;
-        cudaMemcpy(&result, d_partial, sizeof(ValIdx<storageT>), cudaMemcpyDeviceToHost);
-        cudaFree(d_partial);
+        CUDA_CHECK(cudaMemcpy(&result, d_partial, sizeof(ValIdx<storageT>), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaFree(d_partial));
 
         return result.idx;
     }

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <iostream>
-#include <iomanip>
 #include <cstddef>
 
 #include <alya/core/tensor/Tensor2D.hpp>
@@ -13,6 +11,7 @@
 #include <alya/losses/Loss.hpp>
 #include <alya/optimizer/Optimizer.hpp>
 #include <alya/profiling/Timer.hpp>
+#include <alya/profiling/Print.hpp>
 
 namespace alya {
 
@@ -173,17 +172,14 @@ public:
 
     void train() {
         for(size_t epoch = 0; epoch < epochs; epoch++) {
-            std::cout << "=== Epoch " << epoch + 1 << "/" << epochs << " ===" << std::endl;
-            std::cout << "Loaded samples: " << dataset.dataSize() << " | Data per sample: " << inputDim << std::endl;
+            print("=== Epoch ", epoch + 1, "/", epochs, " ===\n");
+            print("Loaded samples: ", dataset.dataSize(), " | Data per sample: ", inputDim, "\n");
 
             size_t numBatches = (dataset.dataSize() + batchsize - 1) / batchsize;
-
             computeT epochLossSum = computeT(0);
             computeT epochAccSum = computeT(0);
             size_t batchesWithAcc = 0;
- 
             double totalBatchTime = 0.0;
-
             Timer timerEpoch;
             timerEpoch.start();
 
@@ -205,8 +201,7 @@ public:
 
                 epochLossSum += res.loss;
 
-                //Acc for classifikation
-                computeT batchAcc = computeT(0);
+                computeT batchAcc = computeT(0);     //Acc for classifikation
 
                 if(loss.isClassification()) {
                     Tensor<P, 2> outAcc = out;
@@ -243,17 +238,18 @@ public:
                 model.step(opt);
 
                 timerBatch.stop();
+                
                 totalBatchTime += timerBatch.getTime();
                 double avgBatchTime = totalBatchTime / (i + 1);
 
                 if(verbose) {
-                    std::cout << "Batch " << i + 1 << "/" << numBatches << " | Loss: " << std::setprecision(6) << res.loss;
+                    print("Batch ", i + 1, "/", numBatches, " | Loss: ", Fixed{6}, res.loss);
                     
                     if(loss.isClassification()) {
-                        std::cout << " | Accuracy: " << std::setprecision(4) << batchAcc;
+                        print(" | Acc: ", Fixed{4}, batchAcc);
                     }
 
-                    std::cout << " | Time: " << std::fixed << std::setprecision(3) << timerBatch.getTime() << "s" << " (avg: " << avgBatchTime << "s)" << std::endl;
+                    print(" | Time: ", Fixed{3}, timerBatch.getTime(), "s (avg: ", avgBatchTime, "s)\n");
                 }
 
             }
@@ -264,16 +260,13 @@ public:
             computeT epochLossAvg = epochLossSum / numBatches;
             computeT epochAccAvg = (batchesWithAcc > 0) ? (epochAccSum / static_cast<computeT>(batchesWithAcc)) : computeT(0);
 
-            std::cout << "=== Epoch Summary ===" << std::endl;
-            std::cout << "Avg Loss: " << std::setprecision(6) << epochLossAvg;
+            print("=== Epoch Summary ===\n", "Avg Loss: ", Fixed{6}, epochLossAvg);
 
             if(loss.isClassification()) {
-                std::cout << " |Avg Acc: " << std::setprecision(4) << epochAccAvg;
+                print(" | Avg Acc: ", Fixed{4}, epochAccAvg);
             }
 
-            std::cout << " |Duration: " << std::fixed << std::setprecision(3) << timerEpoch.getTime() << "s" << std::endl;
-
-            std::cout << std::endl;
+            print(" | Duration: ", Fixed{3}, timerEpoch.getTime(), "s\n", Endl{});
 
             dataset.shuffle();
 

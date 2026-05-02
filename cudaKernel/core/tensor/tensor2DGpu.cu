@@ -4,11 +4,10 @@
 #include <string>
 #include <cstdlib>
 #include <cstddef>
-#include <stdexcept>
 
 #include <alya/core/memory/Device.hpp>
 #include <alya/core/memory/Storage.hpp>
-#include <alya/core/memory/TensorStorageCuda.hpp>
+#include <alya/core/memory/TensorStorageCuda.cuh>
 #include <alya/core/tensor/Tensor2D.hpp>
 #include <alya/core/tensor/Tensoraxis.hpp>
 #include <alya/core/precision/PrecisonTypes.cuh>
@@ -17,6 +16,7 @@
 #include <alya/core/ops/NumericalOps.cuh>
 #include <alya/core/ops/WarpReduction.hpp>
 #include <alya/core/data/ArgMinMaxContainer.hpp>
+#include <alya/profiling/CudaCheck.cuh>
 
 
 //--------------- KERNEL---------------//
@@ -408,80 +408,6 @@ __global__ void argmaxRowsKernel(const T* A, size_t* B, size_t rows, size_t cols
 
 namespace alya {
 
-//--------------- Memory ---------------//
-template <typename P>
-Tensor<P, 2> Tensor<P, 2>::clone() const {
-    Tensor<P, 2> out(rows, cols, storage ? storage -> device : Device{});
-
-    if(!storage) { return out; }
-
-    if(storage -> cpuValid) {
-        if(out.storage -> device.type == DeviceType::GPU) {
-            if(!out.storage -> gpuPtr) {
-                cudaError_t err = cudaMalloc(&out.storage -> gpuPtr, out.storage -> bytes);
-
-                if(err != cudaSuccess) {
-                    throw std::runtime_error("GPU: cudamalloc failed: " + std::string(cudaGetErrorString(err)));
-                }
-            }
-            cudaMemcpy(out.storage -> gpuPtr, storage -> cpuPtr, storage -> bytes, cudaMemcpyHostToDevice);
-
-            out.storage -> gpuValid = true;
-            out.storage -> cpuValid = false;
-
-            return out;
-        }
-
-        if(!out.storage -> cpuPtr) {
-            out.storage -> cpuPtr = std::malloc(out.storage -> bytes);
-
-            if(!out.storage -> cpuPtr) {
-                throw std::runtime_error("CPU: malloc failed");
-            }
-        }
-        std::memcpy(out.storage -> cpuPtr, storage -> cpuPtr, storage -> bytes);
-
-        out.storage -> cpuValid = true;
-        out.storage -> gpuValid = false;
-
-        return out;
-    }
-
-    if(storage -> gpuValid) {
-        if(out.storage -> device.type == DeviceType::GPU) {
-            if(!out.storage -> gpuPtr) {
-                cudaError_t err = cudaMalloc(&out.storage -> gpuPtr, out.storage -> bytes);
-
-                if(err != cudaSuccess) {
-                    throw std::runtime_error("GPU: cudamalloc failed: " + std::string(cudaGetErrorString(err)));
-                }
-            }
-            cudaMemcpy(out.storage -> gpuPtr, storage -> gpuPtr, storage -> bytes, cudaMemcpyDeviceToDevice);
-
-            out.storage -> gpuValid = true;
-            out.storage -> cpuValid = false;
-
-            return out;
-        }
-
-        if(!out.storage -> cpuPtr) {
-            out.storage -> cpuPtr = std::malloc(out.storage -> bytes);
-
-            if(!out.storage -> cpuPtr) {
-                throw std::runtime_error("CPU: malloc failed");
-            }
-        }
-        cudaMemcpy(out.storage -> cpuPtr, storage -> gpuPtr, storage -> bytes, cudaMemcpyDeviceToHost);
-
-        out.storage -> cpuValid = true;
-        out.storage -> gpuValid = false;
-
-        return out;
-    }
-
-    return out;
-}
-
 //--------------- FUNCTIONS ---------------//
 //Tensor2D-multiplikation
 template <typename P>
@@ -499,11 +425,7 @@ Tensor<P, 2> Tensor<P, 2>::matmulGpu(const Tensor<P, 2>& B) const {
     const dim3 gridSize((B.cols + (MatmulConfig::BLOCK_N * 2) - 1) / (MatmulConfig::BLOCK_N), (rows + (MatmulConfig::BLOCK_M * 2) - 1) / (MatmulConfig::BLOCK_M));    //blockBim.x, blockDim.y
 
     matmul2x2Kernel<<<gridSize, blockSize>>>(gpuData(), B.gpuData(), C.gpuData(), static_cast<int>(rows), static_cast<int>(cols), static_cast<int>(B.cols));
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: matmulGpu: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     return C;
 }
@@ -524,11 +446,7 @@ Tensor<P, 2> Tensor<P, 2>::broadcast(Tensor<P, 2>& B) const {
     const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
     broadcastKernel<Functor, storageT, axis><<<numBlocks, blockSize>>>(gpuData(), B.gpuData(), C.gpuData(), static_cast<int>(rows), static_cast<int>(cols));
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: broadcast: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     return C;
 }
@@ -546,11 +464,7 @@ Tensor<P, 2>& Tensor<P, 2>::broadcastInplace(const Tensor<P, 2>& B) {
     const int numBlocks = (static_cast<int>(N) + blockSize - 1) / blockSize;
 
     broadcast_inplaceKernel<Functor, storageT, axis><<<numBlocks, blockSize>>>(gpuData(), B.gpuData(), static_cast<int>(rows), static_cast<int>(cols));
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: broadcastInpalce: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     return *this;
 }
@@ -591,11 +505,7 @@ Tensor<P, 2> Tensor<P, 2>::transposeGpu() const {
     const dim3 grid((cols + TransposeConfig::TILE_SIZE - 1) / TransposeConfig::TILE_SIZE, (rows + TransposeConfig::TILE_SIZE - 1) / TransposeConfig::TILE_SIZE);
 
     transposeKernel<<<grid, block>>>(gpuData(), B.gpuData(), rows, cols);
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: transoseGpu: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     return B;
 }
@@ -614,11 +524,7 @@ Tensor<P, 2> Tensor<P, 2>::sumRowsGpu() const {
     const size_t shared = blockSize * sizeof(storageT);
 
     sumRowsKernel<<<gridSize, blockSize, shared>>>(gpuData(), result.gpuData(), static_cast<int>(rows), static_cast<int>(cols));
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: sumRowsGpu: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     return result;
 }
@@ -637,11 +543,7 @@ Tensor<P, 2> Tensor<P, 2>::sumColsGpu() const {
     const size_t shared = blockSize * sizeof(storageT);
 
     sumColsKernel<<<gridSize, blockSize, shared>>>(gpuData(), result.gpuData(), static_cast<int>(cols));
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: sumColsGpu" + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     return result;
 }
@@ -660,11 +562,7 @@ Tensor<P, 2> Tensor<P, 2>::minRowsGpu() const {
     const size_t shared = blockSize * sizeof(storageT);
 
     minRowsKernel<<<gridSize, blockSize, shared>>>(gpuData(), result.gpuData(), static_cast<int>(rows), static_cast<int>(cols));
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: minRowsGpu: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     return result;
 }
@@ -683,11 +581,7 @@ Tensor<P, 2> Tensor<P, 2>::maxRowsGpu() const {
     size_t shared = blockSize * sizeof(storageT);
 
     maxRowsKernel<<<gridSize, blockSize, shared>>>(gpuData(), result.gpuData(), static_cast<int>(rows), static_cast<int>(cols));
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: maxRowsGpu" + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     return result;
 }
@@ -706,11 +600,7 @@ Tensor<size_t, 2> Tensor<P, 2>::argminRowsGpu() const {
     size_t shmem = blockSize * (sizeof(storageT) + sizeof(size_t));
 
     argminRowsKernel<<<gridSize, blockSize, shmem>>>(gpuData(), result.gpuData(), rows, cols);
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: argminRowsGpu: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     return result;
 }
@@ -729,11 +619,7 @@ Tensor<size_t, 2> Tensor<P, 2>::argmaxRowsGpu() const {
     size_t shmem = blockSize * (sizeof(storageT) + sizeof(size_t));
 
     argmaxRowsKernel<<<gridSize, blockSize, shmem>>>(gpuData(), result.gpuData(), rows, cols);
-    cudaError_t err = cudaDeviceSynchronize();
-
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: argmaxRowsGpu: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaDeviceSynchronize());
     
     return result;
 }

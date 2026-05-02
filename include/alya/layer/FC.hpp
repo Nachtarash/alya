@@ -7,6 +7,7 @@
 #include <alya/core/memory/Device.hpp>
 #include <alya/layer/LayerBase.hpp>
 #include <alya/activation/ActivationCpu.hpp>
+#include <alya/layer/LayerCaches.hpp>
 #include <alya/core/precision/PrecisonTypes.cuh>
 
 namespace alya {
@@ -27,9 +28,9 @@ private:
  
     Tensor<P, 2> weights;
     Tensor<P, 2> bias;
-    Tensor<P, 2> z;        //forward pre activation cache && reused as delta buffer in gpu backward
-    Tensor<P, 2> a;        //forward cache
-    Tensor<P, 2> input;    //backprop cache
+    
+    FCCache<Tensor<P, 2>> cache;
+
     Tensor<P, 2> dw;       //gradients weights
     Tensor<P, 2> db;       //gradients biases
 
@@ -67,7 +68,7 @@ public:
         }
     }
 
-    Tensor<P, 2>& getOutput() override { return a; }
+    Tensor<P, 2>& getOutput() override { return cache.act.a; }
 
     //parameter access for optimizers
     Tensor<P, 2>& getWeights() override { return weights; }
@@ -77,7 +78,12 @@ public:
 
 private:
     void initParams() {
-        if constexpr(std::is_same_v<ActOpT, ReLuOp<storageT>> || std::is_same_v<ActOpT, LeakyReLuOp<storageT>> || std::is_same_v<ActOpT, ELUOp<storageT>>) {
+        if constexpr(std::is_same_v<ActOpT, ReLuOp<storageT>> || 
+                     std::is_same_v<ActOpT, LeakyReLuOp<storageT>> || 
+                     std::is_same_v<ActOpT, ELUOp<storageT>> ||
+                     std::is_same_v<ActOpT, GELUOp<storageT>> ||
+                     std::is_same_v<ActOpT, SwishOp<storageT>>)
+                    {
             weights.initHe();
         } else {
             weights.initXavier();
@@ -87,25 +93,23 @@ private:
     }
 
     Tensor<P, 2> forwardCpu(const Tensor<P, 2>& inputIn) {
-        input = inputIn.clone();
+        cache.input = inputIn.clone();
 
-        z = input.matmul(weights).addBroadcastRow(bias);
-        a = z.activate<ActOpT>();
+        cache.act.z = cache.input.matmul(weights).addBroadcastRow(bias);
+        cache.act.a = cache.act.z.template activate<ActOpT>();
 
-        return a;
+        return cache.act.a;
     }
 
     Tensor<P, 2> forwardGpu(const Tensor<P, 2>& inputIn);
 
     Tensor<P, 2> backwardCpu(const Tensor<P, 2>& gradOut) {
-        Tensor<P, 2> dact = a.derivative<ActOpT>();
-        Tensor<P, 2> delta = gradOut.clone();
-        delta.hadamardInplace(dact);
+        Tensor<P, 2> gradZ = cache.act.z.template activationBackward<ActOpT>(gradOut, cache.act.a);
 
-        dw = input.transpose().matmul(delta);
-        db = delta.sumRows();
+        dw = cache.input.transpose().matmul(gradZ);
+        db = gradZ.sumRows();
 
-        Tensor<P, 2> gradInput = delta.matmul(weights.transpose());
+        Tensor<P, 2> gradInput = gradZ.matmul(weights.transpose());
         return gradInput;
     }
 

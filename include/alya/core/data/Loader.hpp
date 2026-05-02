@@ -4,11 +4,9 @@
 #include <cstdint>
 #include <cstddef>
 #include <fstream>
-#include <iostream>
 #include <numeric>
 #include <random>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -17,6 +15,7 @@
 #include <alya/core/data/Dataset.hpp>
 #include <alya/core/precision/PrecisonTypes.cuh>
 #include <alya/core/precision/PrecisionUtils.cuh>
+#include <alya/profiling/ErrorMessage.hpp>
 
 namespace alya::internal {
 
@@ -80,13 +79,13 @@ public:
                 singleLoaderMnist(filename, batch);
                 break;
             case EMNISTDIGITS: 
-                throw std::runtime_error("Not available!");
+                ERRORMESSAGE("Not available");
             case EMNISTLETTERS: 
-                throw std::runtime_error("Not available!");
+                ERRORMESSAGE("Not available");
             case NONE:
-                throw std::runtime_error("Not available!");
+                ERRORMESSAGE("Not available");
             default:
-                throw std::runtime_error("Invalid loaderType");
+                ERRORMESSAGE("Invalid LoaderType");
         }
     }
     
@@ -114,7 +113,7 @@ public:
                 dualLoaderNew(vFilename, lFilename, batch);
                 break;
             default:
-                throw std::runtime_error("Invalid loaderType");
+                ERRORMESSAGE("Invalid LoaderType");
         };
     }
 
@@ -150,7 +149,7 @@ public:
     /// @param target Tensor
     void next(Tensor<P, 2>& input, Tensor<P, 2>& target) {
         if(input.numRows() != batchSize || target.numRows() != batchSize) {
-            throw std::runtime_error("loader.next: Invalid Batchsize!!!");
+            ERRORMESSAGE("Invalid batchsize");
         }
 
         storageT* inPtr = input.cpuData();
@@ -193,7 +192,9 @@ public:
 private:
     void singleLoaderMnist(const std::string& filename, size_t batch) {
         std::ifstream file(filename);
-        if(!file.is_open()) { throw std::runtime_error("Loader: TextType: file couldn't be opened."); }
+        if(!file.is_open()) { 
+            ERRORMESSAGE("file couldn't be opend");
+        }
 
         std::string line;
         bool firstSample = true;
@@ -219,7 +220,10 @@ private:
 
             if(firstSample) {
                 dataset.inputDim = pixels.size();
-                if(pixels.size() != dataset.inputDim) { throw std::runtime_error("loader: TextType: sample size mismatch"); }
+                if(pixels.size() != dataset.inputDim) { 
+                    ERRORMESSAGE("sample size mismatch"); 
+                }
+
                 firstSample = false;
             }
 
@@ -231,16 +235,12 @@ private:
     void dualLoaderEmnist(const std::string& vFilename, const std::string& lFilename, size_t batch) {
         std::ifstream v_file(vFilename, std::ios::binary);
         if(!v_file.is_open()) {
-            std::cerr << "loader: file '" << vFilename << "' could not be opend" << std::endl;
-
-            throw std::runtime_error("loader: couldnt open file: " + vFilename); 
+            ERRORMESSAGE("couldn't be opend: " + vFilename);
         }
 
         std::ifstream l_file(lFilename, std::ios::binary);
         if(!l_file.is_open()) { 
-            std::cerr << "loader: file '" << lFilename << "' could not be opend" << std::endl;
-
-            throw std::runtime_error("loader: couldnt open file: " + lFilename); 
+            ERRORMESSAGE("couldn't be opend: " + lFilename);
         }
 
         uint32_t vMagic = internal::readInt(v_file);
@@ -252,10 +252,10 @@ private:
         uint32_t numLabels = internal::readInt(l_file);
 
         if(vMagic != 2051 || lMagic != 2049) {
-            throw std::runtime_error("loader: invalid IDX magic number.");
+            ERRORMESSAGE("invalid IDX magic number");
         }
         if(numImages != numLabels) {
-            throw std::runtime_error("loader: image/label count mismatch.");
+            ERRORMESSAGE("image/label count mismatch");
         }
 
         dataset.inputDim = static_cast<size_t>(rows) * static_cast<size_t>(cols);
@@ -281,16 +281,12 @@ private:
     void dualLoaderEmnistLetters(const std::string& vFilename, const std::string& lFilename, size_t batch) {
         std::ifstream v_file(vFilename, std::ios::binary);
         if(!v_file.is_open()) {
-            std::cerr << "loader: file '" << vFilename << "' could not be opend" << std::endl;
-
-            throw std::runtime_error("loader: couldnt open file: " + lFilename);
+            ERRORMESSAGE("couldn't be opend: " + vFilename);
         }
 
         std::ifstream l_file(lFilename, std::ios::binary);
         if(!l_file.is_open()) {
-            std::cerr << "loader: file '" << vFilename << "' could not be opend" << std::endl;
-
-            throw std::runtime_error("loader: couldnt open file: " + lFilename);
+            ERRORMESSAGE("couldn't be opend: " + lFilename);
         }
 
         uint32_t vMagic = internal::readInt(v_file);
@@ -302,10 +298,10 @@ private:
         uint32_t numLabels = internal::readInt(l_file);
 
         if(vMagic != 2051 || lMagic != 2049) {
-            throw std::runtime_error("loader: invalid IDX magic number.");
+            ERRORMESSAGE("invalid IDX magic number");
         }
         if(numImages != numLabels) {
-            throw std::runtime_error("loader: image/label count mismatch.");
+            ERRORMESSAGE("image/label count mismatch");
         }
 
         dataset.inputDim = static_cast<size_t>(rows) * static_cast<size_t>(cols);
@@ -325,7 +321,7 @@ private:
 
         for(size_t i = 0; i < tmpLabels.size(); i++) {
             if(tmpLabels[i] == 0) {
-                throw std::runtime_error("loader: emnist-letters: expected labels should be in range 1-26");
+                ERRORMESSAGE("expected labels should be in range 1-26");
             }
 
             dataset.labels[i] = static_cast<uint32_t>(tmpLabels[i] - 1);
@@ -333,7 +329,7 @@ private:
     }
 
     void dualLoaderNew(const std::string& vFilename, const std::string& lFilename, size_t batch) {
-        throw std::runtime_error("no loader made!!!");
+        ERRORMESSAGE("NO loader made!!!");
     }
 };
 

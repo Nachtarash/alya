@@ -3,46 +3,8 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 
-#include <cmath>
-#include <type_traits>
-
 #include <alya/core/precision/PrecisionUtils.cuh>
-
-template <typename T>
-__host__ __device__
-T expVali(T x) {
-    if constexpr (std::is_same_v<T, float>) {
-        return expf(x);
-    } else {
-        return exp(x);
-    }
-}
-
-template <>
-__device__ __forceinline__ 
-__half expVali<__half>(__half x) { return __float2half(expf(__half2float(x))); }
-
-template <>
-__device__ __forceinline__ 
-__nv_bfloat16 expVali<__nv_bfloat16>(__nv_bfloat16 x) { return __float2bfloat16(expf(__bfloat162float(x))); }
-
-template <typename T>
-__host__ __device__
-T tanhVali(T x) {
-    if constexpr (std::is_same_v<T, float>) {
-        return tanhf(x);
-    } else {
-        return tanh(x);
-    }
-}
-
-template <>
-__device__ __forceinline__ 
-__half tanhVali<__half>(__half x) { return __float2half(tanf(__half2float(x))); }
-
-template <>
-__device__ __forceinline__
-__nv_bfloat16 tanhVali<__nv_bfloat16>(__nv_bfloat16 x) { return __float2bfloat16(tanf(__bfloat162float(x))); }
+#include <alya/activation/ActivationUtils.cuh>
 
 /// @brief Linear activation
 /// @note f(x) = x
@@ -52,7 +14,9 @@ template <typename T>
 struct LinearOp {
     __host__ __device__ static T apply(T x) { return x; }
 
-    __host__  __device__ static T derivativeFromOutput(T y) { return gpuOne<T>(); }
+    __host__  __device__ static T backwardScalar(T gradOut, T z, T a) {
+        return gradOut;
+    }
 };
 
 /// @brief ReLu activation
@@ -65,7 +29,9 @@ struct ReLuOp {
     static T apply(T x) { return gpuGt(x, gpuZero<T>()) ? x : gpuZero<T>(); }
 
     __host__ __device__ 
-    static T derivativeFromOutput(T y) { return gpuGt(y, gpuZero<T>()) ? gpuOne<T>() : gpuZero<T>(); }
+    static T backwardScalar(T gradOut, T z, T a) {
+        return gpuGt(a, gpuZero<T>()) ? gradOut : gpuZero<T>();
+    }
 };
 
 /// @brief LeakyReLu activation | has alpha value
@@ -81,8 +47,9 @@ struct LeakyReLuOp {
     }
     
     __host__ __device__ 
-    static T derivativeFromOutput(T y) {
-        return gpuGt(y, gpuZero<T>()) ? gpuOne<T>() : gpuLeakyAlpha<T>();
+    static T backwardScalar(T gradOut, T z, T a) {
+        T slope = gpuGt(a, gpuZero<T>()) ? gpuOne<T>() : gpuLeakyAlpha<T>();
+        return gpuMul(gradOut, slope);
     }
 };
 
@@ -98,8 +65,9 @@ struct ELUOp {
     }
 
     __host__ __device__ 
-    static T derivativeFromOutput(T y) {
-        return gpuGt(y, gpuZero<T>()) ? gpuOne<T>() : gpuSub(y, gpuZero<T>());
+    static T backwardScalar(T gradOut, T z, T a) {
+        T slope = gpuGt(a, gpuZero<T>()) ? gpuOne<T>() : gpuAdd(a, gpuOne<T>());
+        return gpuMul(gradOut, slope);
     }
 };
 
@@ -115,8 +83,8 @@ struct SigmoidOp {
     }
 
     __host__ __device__ 
-    static T derivativeFromOutput(T y) {
-        return gpuMul(y, gpuSub(gpuOne<T>(), y));
+    static T backwardScalar(T gradOut, T z, T a) {
+        return gpuMul(gradOut, gpuMul(a, gpuSub(gpuOne<T>(), a)));
     }
 };
 
@@ -130,7 +98,33 @@ struct TanhOp {
     static T apply(T x) { return tanhVali(x); }
 
     __host__ __device__ 
-    static T derivativeFromOutput(T y) {
-        return gpuSub(gpuOne<T>(), gpuMul(y, y));
+    static T backwardScalar(T gradOut, T z, T a) {
+        return gpuMul(gradOut, gpuSub(gpuOne<T>(), gpuMul(a, a)));
+    }
+};
+
+template <typename T>
+struct GELUOp {
+    __host__ __device__
+    static T apply(T x) {
+        return activationDetail::applyWithCompute<T, activationDetail::GELUFormula>(x);
+    }
+
+    __host__ __device__
+    static T backwardScalar(T gradOut, T x, T a) {
+        return activationDetail::backwardWithCompute<T, activationDetail::GELUFormula>(gradOut, x);
+    }
+};
+
+template <typename T>
+struct SwishOp {
+    __host__ __device__
+    static T apply(T x) {
+        return activationDetail::applyWithCompute<T, activationDetail::SwishFormula>(x);
+    }
+
+    __host__ __device__
+    static T backwardScalar(T gradOut, T x, T a) {
+        return activationDetail::backwardWithCompute<T, activationDetail::SwishFormula>(gradOut, x);
     }
 };

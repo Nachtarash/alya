@@ -2,26 +2,25 @@
 
 #include <cstdlib>
 #include <cstring>
-#include <stdexcept>
 #include <string>
 
+#include <alya/core/memory/TensorStorageCuda.cuh>
 #include <alya/core/memory/Storage.hpp>
+#include <alya/profiling/CudaCheck.cuh>
+#include <alya/profiling/ErrorMessage.hpp>
 
 namespace alya::internal {
 
 void tensorStorageAllocateGpu(Storage* storage) {
     if(!storage) {
-        throw std::runtime_error("GPU: tensorStorageAllocateGpu: has nothing to store");
+        ERRORMESSAGE("has nothing to store");
     }
 
     if(storage -> bytes == 0 || storage -> gpuPtr) {
         return;
     }
 
-    cudaError_t err = cudaMalloc(&storage -> gpuPtr, storage -> bytes);
-    if(err != cudaSuccess) {
-        throw std::runtime_error("GPU: tensorStorageAllocateGpu: cudamalloc failed: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaMalloc(&storage -> gpuPtr, storage -> bytes));
 }
 
 void tensorStorageFreeGpu(Storage* storage) noexcept {
@@ -29,13 +28,13 @@ void tensorStorageFreeGpu(Storage* storage) noexcept {
         return;
     }
 
-    cudaFree(storage -> gpuPtr);
+    CUDA_CHECK(cudaFree(storage -> gpuPtr));
     storage -> gpuPtr = nullptr;
 }
 
 void tensorStorageSyncToGpu(Storage* storage) {
     if(!storage) {
-        throw std::runtime_error("GPU: tensorStorageSyncToGpu: failed: has nothing to store");
+        ERRORMESSAGE("has nothing to store");
     }
 
     if(storage -> bytes == 0) {
@@ -50,15 +49,9 @@ void tensorStorageSyncToGpu(Storage* storage) {
     tensorStorageAllocateGpu(storage);
 
     if(storage -> cpuValid) {
-        cudaError_t err = cudaMemcpy(storage -> gpuPtr, storage -> cpuPtr, storage -> bytes, cudaMemcpyHostToDevice);
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: tensorStorageSyncToGpu: cudaMemcpy H2D failed: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaMemcpy(storage -> gpuPtr, storage -> cpuPtr, storage -> bytes, cudaMemcpyHostToDevice));
     } else {
-        cudaError_t err = cudaMemset(storage -> gpuPtr, 0, storage -> bytes);
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: tensorStorageSyncToGpu: cudaMemset failed: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaMemset(storage -> gpuPtr, 0, storage -> bytes));
     }
 
     storage -> gpuValid = true;
@@ -66,7 +59,7 @@ void tensorStorageSyncToGpu(Storage* storage) {
 
 void tensorStorageSyncToCpu(Storage* storage) {
     if(!storage) {
-        throw std::runtime_error("CPU: tensorStorageSyncToCpu: has nothing to store");
+        ERRORMESSAGE("has nothing to store");
     }
 
     if(storage -> bytes == 0) {
@@ -81,15 +74,12 @@ void tensorStorageSyncToCpu(Storage* storage) {
     if(!storage -> cpuPtr) {
         storage -> cpuPtr = std::malloc(storage -> bytes);
         if(!storage -> cpuPtr) {
-            throw std::runtime_error("CPU: tensorStorageSyncToCpu: malloc failed");
+            ERRORMESSAGE("malloc failed");
         }
     }
 
     if(storage -> gpuValid) {
-        cudaError_t err = cudaMemcpy(storage -> cpuPtr, storage -> gpuPtr, storage -> bytes, cudaMemcpyDeviceToHost);
-        if(err != cudaSuccess) {
-            throw std::runtime_error("GPU: tensorStorageSyncToCpu: cudaMemcpy D2H failed: " + std::string(cudaGetErrorString(err)));
-        }
+        CUDA_CHECK(cudaMemcpy(storage -> cpuPtr, storage -> gpuPtr, storage -> bytes, cudaMemcpyDeviceToHost));
     } else {
         std::memset(storage -> cpuPtr, 0, storage->bytes);
     }

@@ -12,6 +12,6 @@ namespace activationGpu {
     void applyGpu(const T* in, T* out, size_t N);
 
     template <typename Op, typename T>
-    void derivativeGpu(const T* y, T* out, size_t N);
+    void backwardGpu(const T* gradOut, const T* z, const T* a, T* gradZ, size_t N);
 
 }

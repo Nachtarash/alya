@@ -5,6 +5,7 @@
 
 #include <alya/core/ops/NumericalOps.cuh>
 #include <alya/core/precision/PrecisionUtils.cuh>
+#include <alya/activation/ActivationGpu.cuh>
 
 namespace alya::TensorLinearOpsGpu {
 
@@ -17,7 +18,38 @@ concept TensorLike = requires(X x, const X cx) {
     { x.gpuData() };
     { cx.gpuData() };
     { cx.emptyLike() } -> std::same_as<X>;
+    { x.toGPU() };
 };
+
+template <TensorLike TensorType, typename Op>
+TensorType activateGpu(const TensorType& A) {
+    const size_t N = A.size();
+
+    TensorType out = A.emptyLike();
+
+    const_cast<TensorType&>(A).toGPU();
+    out.toGPU();
+
+    activationGpu::applyGpu<Op>(A.gpuData(), out.gpuData(), N);
+
+    return out;
+}
+
+template <TensorLike TensorType, typename Op>
+TensorType activationBackwardGpu(const TensorType& A, const TensorType& gradOut, const TensorType& a) {
+    const size_t N = A.size();
+
+    TensorType gradZ = A.emptyLike();
+
+    const_cast<TensorType&>(A).toGPU();
+    const_cast<TensorType&>(gradOut).toGPU();
+    const_cast<TensorType&>(a).toGPU();
+    gradZ.toGPU();
+
+    activationGpu::backwardGpu<Op>(gradOut.gpuData(), A.gpuData(), a.gpuData(), gradZ.gpuData(), N);
+
+    return gradZ;
+}
 
 template <TensorLike TensorType, typename Functor>
 TensorType elementwise(const TensorType& A, const TensorType& B);

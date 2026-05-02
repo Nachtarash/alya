@@ -8,6 +8,7 @@
 
 #include <alya/core/precision/PrecisonTypes.cuh>
 #include <alya/core/precision/PrecisionUtils.cuh>
+#include <alya/activation/ActivationCpu.hpp>
 
 namespace alya::TensorLinearOpsCpu {
 
@@ -21,6 +22,28 @@ concept TensorLike = requires(X x, const X cx) {
     { cx.cpuData() };
     { cx.emptyLike() } -> std::same_as<X>;
 };
+
+template <TensorLike TensorType, typename Op>
+TensorType activateCpu(const TensorType& A) {
+    const size_t N = A.size();
+
+    TensorType out = A.emptyLike();
+
+    activationCpu::applyCpu<Op>(A.cpuData(), out.cpuData(), N);
+
+    return out;
+}
+
+template <TensorLike TensorType, typename Op>
+TensorType activationBackwardCpu(const TensorType& A, const TensorType& gradOut, const TensorType& a) {
+    const size_t N = A.size();
+
+    TensorType gradZ = A.emptyLike();
+
+    activationCpu::backwardCpu<Op>(gradOut.cpuData(), A.cpuData(), a.cpuData(), gradZ.cpuData(), N);
+
+    return gradZ;
+}
 
 template <TensorLike TensorType>
 TensorType hadamardCpu(const TensorType& A, const TensorType& B) {

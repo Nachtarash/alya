@@ -24,23 +24,23 @@ int main() {
     constexpr float WD = 0.0003f;
     constexpr size_t EPOCHS = 25;
     
-    alya::loader<P> emnist("datasets/byclass/emnist-byclass-train-images-idx3-ubyte", "datasets/byclass/emnist-byclass-train-labels-idx1-ubyte", BATCH_SIZE, alya::LoaderType::EMNISTBYCLASS);
-    alya::loader<P> emnist_val("datasets/byclass/emnist-byclass-test-images-idx3-ubyte", "datasets/byclass/emnist-byclass-test-labels-idx1-ubyte", BATCH_SIZE, alya::LoaderType::EMNISTBYCLASS);
+    alya::loader<P> emnist("datasets/balanced/emnist-balanced-train-images-idx3-ubyte", "datasets/balanced/emnist-balanced-train-labels-idx1-ubyte", BATCH_SIZE, alya::LoaderType::EMNISTBALANCED);
+    alya::loader<P> emnist_val("datasets/balanced/emnist-balanced-test-images-idx3-ubyte", "datasets/balanced/emnist-balanced-test-labels-idx1-ubyte", BATCH_SIZE, alya::LoaderType::EMNISTBALANCED);
     emnist.normalize(alya::NormType::DIV255);
     emnist_val.normalize(alya::NormType::DIV255);
     emnist.normalize(alya::NormType::ZERO_MEAN_STD__GLOBAL);
     emnist_val.normalize(alya::NormType::ZERO_MEAN_STD__GLOBAL);
 
-    alya::FC<P, LeakyReLuOp> layer1(784, 512);
+    alya::FC<P, GELUOp> layer1(784, 512);
     alya::Dropout<P> drop1(layer1, 0.03f);
-    alya::FC<P, LeakyReLuOp> layer2(512, 384);
+    alya::FC<P, GELUOp> layer2(512, 384);
     alya::Dropout<P> drop2(layer2, 0.1f);
-    alya::FC<P, LeakyReLuOp> layer3(384, 256);
+    alya::FC<P, GELUOp> layer3(384, 256);
     alya::Dropout<P> drop3(layer3, 0.125f);
-    alya::FC<P, LeakyReLuOp> layer4(256, 128);
+    alya::FC<P, GELUOp> layer4(256, 128);
     alya::Dropout<P> drop4(layer4, 0.025f);
-    alya::FC<P, LeakyReLuOp> layer5(128, 64);
-    alya::FC<P, LinearOp> layer6(64, 62);
+    alya::FC<P, GELUOp> layer5(128, 64);
+    alya::FC<P, LinearOp> layer6(64, 47);
 
     alya::MLP<P> model;
     model.addLayer(&layer1);
@@ -57,11 +57,11 @@ int main() {
     alya::CrossEntropyLoss<P> loss;
     alya::AdamW<P> opt(LR, WD);
 
-    alya::Trainer<P> trainer(BATCH_SIZE, 784, 62, model, emnist, emnist_val, loss, opt, EPOCHS, gpu);
+    alya::Trainer<P> trainer(BATCH_SIZE, 784, 47, model, emnist, emnist_val, loss, opt, EPOCHS, gpu);
     trainer.train();
 
     timer.stop();
-    timer.print<alya::time::seconds>();
+    timer.printTime<alya::time::seconds>();
 
     return 0;
 }
