@@ -1,6 +1,6 @@
 #include <alya/layer/FC.hpp>
 #include <alya/core/Precision/PrecisonTypes.cuh> 
-//#include <alya/layer/Dropout.hpp>
+#include <alya/layer/Dropout.hpp>
 #include <alya/layer/StructuredDropout.hpp>
 #include <alya/layer/MLP.hpp>
 #include <alya/activation/ActivationOps.cuh>
@@ -39,7 +39,7 @@ int main() {
     alya::FC<P, GELUOp> layer3(384, 256);
     alya::StructuredDropout<P, 2> drop3(0.125f);
     alya::FC<P, GELUOp> layer4(256, 128);
-    alya::StructuredDropout<P, 2> drop4(0.025f);
+    alya::Dropout<P, 2> drop4(0.025f);
     alya::FC<P, GELUOp> layer5(128, 64);
     alya::FC<P, LinearOp> layer6(64, 47);
 

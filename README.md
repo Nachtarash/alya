@@ -5,8 +5,6 @@ ___
 
 Alya is a neural network framework written from scratch in C++ and CUDA. It was built out of curiosity - to understand what actually happens inside, at implementation level. No PyTorch, no TensorFlow, no cuBLAS, no CUTLASS. Kernels are handwritten. Memory management is manual. Everything is implemented directly.
 
-It was also my First C++ project. I learned the language while buiding this.
-
 The architecture is **declarative**: you describe what you want, Alya builds it. Complexity is pushed inward - layers internals, memory management, and CUDA kernels stay hidden. But whether the model actually trains well is on you. Bad learning rate -> bad model.
 
 The design is **not modeled after existing frameworks**. It reflects how i thought about the problem while learing - unconventional in places, but readable by necessity... i think.
@@ -38,14 +36,14 @@ Loading Data
 //...
 
 alya::FC<P, LeakyReLuOp> layer1(784, 512);
-alya::Dropout<P> drop1(layer1, 0.03f);
+alya::Dropout<P, 2> drop1(layer1, 0.03f);
 alya::FC<P, LeakyReLuOp> layer2(512, 384);
 //...
 
 alya::MLP<P> model;
-model.addLayer(&layer1);
-model.addLayer(&layer2);
-model.addDropout(&drop1);
+model.addTrainableLayer(&layer1);
+model.addTrainableLayer(&layer2);
+model.addLayer(&drop1);
 //...
 
 alya::CrossEntropyLoss<P> loss;
@@ -90,6 +88,8 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=your number
 **Note**: CMake may detects RTX 50xx as sm_75 (RTX 20xx). Manually setting is recommended
 
 To compile on windows, developer command prompt for VS 20xx is often required.
+
+For Windows: build.bat does automate said steps. Manually setting VS version is required -> templates are commented in file. Setting Cuda-Device stil applies if needed.
 
 ## Datasets
 

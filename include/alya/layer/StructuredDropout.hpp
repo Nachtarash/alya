@@ -11,10 +11,11 @@
 
 namespace alya {
 
-/// @brief Art of normalization | creates a mask with values 0 and 1 and deactivates the Neuron for the layer
+/// @brief Art of normalization | creates a mask with values 0 and 1 and deactivates the Neuron in blocks of [outerDim, lastDim]
 /// @tparam P Precison type (e.g. alya::fp32)
-/// @param layer layer to perform dropout on
-/// @param rate rate in percent to deactivate Neurons (e.g. name(layerX, 0.02))
+/// @tparam Dim dimension from layer (e.g. fc has dim of 2)
+/// @param rate rate in percent to deactivate Neurons (e.g. name(0.02))
+/// @note lastDim = dims / dims - 1, outerDim = size / lastdim
 template <typename P, size_t Dim>
 class StructuredDropout : public Layer<P, Dim, Dim> {
 private:
@@ -46,7 +47,7 @@ public:
         mask.setDevice(dev);
     }
 
-    /// @brief Performs dropout on layer, targeted in constuctor
+    /// @brief Performs dropout
     TensorT forward(const TensorT& input) override {
         if(!isTraining) {
             return input.clone();

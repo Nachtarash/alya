@@ -103,6 +103,10 @@ struct TanhOp {
     }
 };
 
+/// @brief GLEU activation (approximate)
+/// @note f(x) = 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x^3)))
+/// @note f'(x) = 0.5 * (1 + tanh(u)) + 0.5 * x * sech^2(u) * du/dx
+/// @note u = sqrt(2/π) * (x + 0.044715 * x^3)  
 template <typename T>
 struct GELUOp {
     __host__ __device__
@@ -116,6 +120,9 @@ struct GELUOp {
     }
 };
 
+/// @brief Swish activation
+/// @note f(x) = x * sigmoid(x)
+/// @note f'(x) = f(x) + sigmoid(x) * (1 - f(x))
 template <typename T>
 struct SwishOp {
     __host__ __device__
