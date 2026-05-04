@@ -17,7 +17,7 @@ public:
     optimizer(computeT learningRate, computeT weightDecay) : lr(learningRate), decay(weightDecay) {}
     virtual ~optimizer() = default;
     
-    virtual void step(Layer<P>& layer) = 0;
+    virtual void step(TrainableLayer<P, 2, 2, 2, 2>& layer) = 0;
 };
 
 }   //namespace alya::internal

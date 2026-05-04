@@ -177,7 +177,7 @@ public:
                 std::exit(1);
             }
 
-            for(auto* layer : model.getLayers()) {
+            for(auto* layer : model.getTrainableLayers()) {
                 Tensor<P, 2>& weights = layer -> getWeights();
                 Tensor<P, 2>& biases = layer -> getBias();
 

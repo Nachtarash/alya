@@ -1,6 +1,7 @@
 #include <alya/layer/FC.hpp>
 #include <alya/core/Precision/PrecisonTypes.cuh> 
-#include <alya/layer/Dropout.hpp>
+//#include <alya/layer/Dropout.hpp>
+#include <alya/layer/StructuredDropout.hpp>
 #include <alya/layer/MLP.hpp>
 #include <alya/activation/ActivationOps.cuh>
 #include <alya/losses/CeSo.hpp>
@@ -32,27 +33,27 @@ int main() {
     emnist_val.normalize(alya::NormType::ZERO_MEAN_STD__GLOBAL);
 
     alya::FC<P, GELUOp> layer1(784, 512);
-    alya::Dropout<P> drop1(layer1, 0.03f);
+    alya::StructuredDropout<P, 2> drop1(0.03f);
     alya::FC<P, GELUOp> layer2(512, 384);
-    alya::Dropout<P> drop2(layer2, 0.1f);
+    alya::StructuredDropout<P, 2> drop2(0.1f);
     alya::FC<P, GELUOp> layer3(384, 256);
-    alya::Dropout<P> drop3(layer3, 0.125f);
+    alya::StructuredDropout<P, 2> drop3(0.125f);
     alya::FC<P, GELUOp> layer4(256, 128);
-    alya::Dropout<P> drop4(layer4, 0.025f);
+    alya::StructuredDropout<P, 2> drop4(0.025f);
     alya::FC<P, GELUOp> layer5(128, 64);
     alya::FC<P, LinearOp> layer6(64, 47);
 
     alya::MLP<P> model;
-    model.addLayer(&layer1);
-    model.addLayer(&layer2);
-    model.addLayer(&layer3);
-    model.addLayer(&layer4);
-    model.addLayer(&layer5);
-    model.addLayer(&layer6);
-    model.addDropout(&drop1);
-    model.addDropout(&drop2);
-    model.addDropout(&drop3);
-    model.addDropout(&drop4);
+    model.addTrainableLayer(&layer1);
+    model.addLayer(&drop1);
+    model.addTrainableLayer(&layer2);
+    model.addLayer(&drop2);
+    model.addTrainableLayer(&layer3);
+    model.addLayer(&drop3);
+    model.addTrainableLayer(&layer4);
+    model.addLayer(&drop4);
+    model.addTrainableLayer(&layer5);
+    model.addTrainableLayer(&layer6);
 
     alya::CrossEntropyLoss<P> loss;
     alya::AdamW<P> opt(LR, WD);

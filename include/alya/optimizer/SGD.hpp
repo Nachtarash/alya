@@ -1,6 +1,7 @@
 #pragma once
 
 #include <alya/optimizer/Optimizer.hpp>
+#include <alya/layer/TrainableLayer.hpp>
 #include <alya/core/tensor/Tensor2D.hpp>
 #include <alya/core/memory/Device.hpp>
 #include <alya/core/precision/PrecisonTypes.cuh>
@@ -20,7 +21,7 @@ using computeT = Precision<P>::computeT;
 public:
     SGD(computeT learning_rate, computeT weight_decay = computeT(0)) : internal::optimizer<P>(learning_rate, weight_decay) {}
 
-    void step(Layer<P>& layer) override {
+    void step(Train<P>& layer) override {
         if(layer.getWeights().device().type == DeviceType::CPU) {
             stepCpu(layer);
         } else {
@@ -29,12 +30,12 @@ public:
     }
 
 private:
-    void stepCpu(Layer<T>& layer) {
+    void stepCpu(Train<P>& layer) {
         layer.getWeights().subtractInplace(layer.getWeightsGradient().add(layer.getWeights().scalarScale(this -> decay)).scalarScale(this -> lr));       //Wdecay = W - lr(dW + (decay * W))
         layer.getBias().subtractInplace(layer.getBiasGradient().scalarScale(this -> lr));
     }
 
-    void stepGpu(Layer<T>& layer) {
+    void stepGpu(Train<P>& layer) {
         layer.getWeights().subtractInplace(layer.getWeightsGradient().add(layer.getWeights().scalarScale(this -> decay)).scalarScale(this -> lr));      //Wdecay = W - lr(dW + (decay * W))
         layer.getBias().subtractInplace(layer.getBiasGradient().scalarScale(this -> lr));
     }

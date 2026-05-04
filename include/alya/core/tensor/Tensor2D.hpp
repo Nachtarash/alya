@@ -59,6 +59,10 @@ public:
 
     inline size_t size() const { return rows * cols; }
 
+    inline size_t lastDim() const { return numCols(); }
+
+    inline size_t outerDim() const { return numRows(); }
+
     void BYTES() const { 
        size_t bytes = rows * cols * sizeof(storageT);
         print("BYTES: ", bytes, Endl{});
@@ -333,6 +337,13 @@ public:
             "multiplyBroadcastCol", 
             [&] { return multiplyBroadcastColCpu(B); }, 
             [&] { return multiplyBroadcastColGpu(B); });
+    }
+
+    Tensor multiplyLastAxisMask(const Tensor& mask) const {
+        return deviceDispatcher(
+            "multiplyLastAxisMask",
+            [&] { return multiplyLastAxisMaskCpu(mask); },
+            [&] { return multiplyLastAxisMaskGpu(mask); });
     }
 
     /// @brief Σ Tensor -> x
@@ -881,6 +892,14 @@ private:
     }
 
     Tensor multiplyBroadcastColGpu(Tensor& B) const;
+
+    Tensor multiplyLastAxisMaskCpu(const Tensor& mask) const {
+        return TensorLinearOpsCpu::multiplyLastAxisMaskCpu<Tensor>(*this, mask);
+    }
+
+    Tensor multiplyLastAxisMaskGpu(const Tensor& mask) const {
+        return TensorLinearOpsGpu::multiplyLastAxisMaskGpu<Tensor>(*this, mask);
+    }
 
     storageT sumCpu() const{
         return TensorLinearOpsCpu::sumCpu<Tensor>(*this);

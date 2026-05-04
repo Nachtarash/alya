@@ -16,7 +16,7 @@ namespace alya {
 /// @param layer layer to perform dropout on
 /// @param rate rate in percent to deactivate Neurons (e.g. name(layerX, 0.02))
 template <typename P, size_t Dim>
-class Dropout : public Layer<P, Dim, Dim> {
+class StructuredDropout : public Layer<P, Dim, Dim> {
 private:
     using computeT = Precision<P>::computeT;
     using storageT = Precision<P>::storageT;
@@ -26,13 +26,13 @@ private:
     bool isTraining = true;
     computeT dropoutRate;
 
-    TensorT mask;
+    Tensor<P, 2> mask;
 
     std::mt19937 gen{std::random_device{}()};
     std::uniform_real_distribution<computeT> dist{0.0, 1.0};
 
 public:
-    Dropout(computeT rate) : dropoutRate(rate) {}
+    StructuredDropout(computeT rate) : dropoutRate(rate) {}
 
     void setTraining(bool training) override {
         isTraining = training;
@@ -52,11 +52,11 @@ public:
             return input.clone();
         }
 
-        mask = input.emptyLike();
+        mask = Tensor<P, 2>(1, input.lastDim(), input.device());
 
         initMask();
 
-        return input.hadamard(mask);
+        return input.multiplyLastAxisMask(mask);
     }
 
     TensorT backward(const TensorT& gradOut) override {
@@ -64,7 +64,7 @@ public:
             return gradOut.clone();
         }
 
-        return gradOut.hadamard(mask);
+        return gradOut.multiplyLastAxisMask(mask);
     }
 
 private:

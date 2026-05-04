@@ -70,6 +70,17 @@ __global__ void scalarInplaceKernel(T* A, T scalar, int N) {
     }
 }
 
+template <typename T>
+__global__ void multiplyLastAxisMaskKernel(const T* __restrict__ a, const T* __restrict__ m, T* __restrict__ o, const int N, const int M) {
+    const int GLOBAL_IDX = blockIdx.x * blockDim.x + threadIdx.x;
+    const int TOTAL = N * M;
+    if(GLOBAL_IDX < TOTAL) {
+        const int MASK_IDX = GLOBAL_IDX % M;
+
+        o[GLOBAL_IDX] = gpuMul<T>(a[GLOBAL_IDX], m[MASK_IDX]);
+    }
+}
+
 //L2 norm (frobenius norm)
 template <typename T, int BLOCK_SIZE, int ITEMS_PER_THREAD>
 __global__ void sumSquaredKernel(const T*__restrict__ data, T*__restrict__ partial, int N) {
@@ -608,6 +619,31 @@ namespace alya::TensorLinearOpsGpu {
         return A;
     }
 
+    template <TensorLike TensorType>
+    TensorType multiplyLastAxisMaskGpu(const TensorType& A, const TensorType& mask) {
+        A.toGPU();
+        mask.toGPU();
+
+        TensorType out = A.emptyLike();
+
+        using storageT = typename TensorType::storageT;
+
+        const storageT* a = A.gpuData();
+        const storageT* m = mask.gpuData();
+        storageT* o = out.gpuData();
+
+        const size_t N = A.outerDim();
+        const size_t M = A.lastDim();
+        const int total = static_cast<int>(N * M);
+        constexpr int blockSize = 256;
+        const int numBlocks = (total + blockSize - 1) / blockSize;
+
+        multiplyLastAxisMaskKernel<storageT><<<numBlocks, blockSize>>>(a, m, o, static_cast<int>(N), static_cast<int>(M));
+        CUDA_CHECK(cudaDeviceSynchronize());
+
+        return out;
+    }
+
     //L2 norm (frobenius norm)
     template <TensorLike TensorType>
     TensorType::storageT normGpu(const TensorType& A) {
@@ -1108,6 +1144,12 @@ template Tensor<bf16, 2>& TensorLinearOpsGpu::scalarSubtractInplaceGpu<Tensor<bf
 template Tensor<fp16, 2>& TensorLinearOpsGpu::scalarSubtractInplaceGpu<Tensor<fp16, 2>>(Tensor<fp16, 2>&, const float scalarV);
 template Tensor<fp32, 2>& TensorLinearOpsGpu::scalarSubtractInplaceGpu<Tensor<fp32, 2>>(Tensor<fp32, 2>&, const float scalarV);
 template Tensor<fp64, 2>& TensorLinearOpsGpu::scalarSubtractInplaceGpu<Tensor<fp64, 2>>(Tensor<fp64, 2>&, const double scalarV);
+
+
+template Tensor<bf16, 2> TensorLinearOpsGpu::multiplyLastAxisMaskGpu<Tensor<bf16, 2>>(const Tensor<bf16, 2>&, const Tensor<bf16, 2>&);
+template Tensor<fp16, 2> TensorLinearOpsGpu::multiplyLastAxisMaskGpu<Tensor<fp16, 2>>(const Tensor<fp16, 2>&, const Tensor<fp16, 2>&);
+template Tensor<fp32, 2> TensorLinearOpsGpu::multiplyLastAxisMaskGpu<Tensor<fp32, 2>>(const Tensor<fp32, 2>&, const Tensor<fp32, 2>&);
+template Tensor<fp64, 2> TensorLinearOpsGpu::multiplyLastAxisMaskGpu<Tensor<fp64, 2>>(const Tensor<fp64, 2>&, const Tensor<fp64, 2>&);
 
 
 template __nv_bfloat16 TensorLinearOpsGpu::normGpu<Tensor<bf16, 2>>(const Tensor<bf16, 2>&);

@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include <alya/optimizer/Optimizer.hpp>
+#include <alya/layer/TrainableLayer.hpp>
 #include <alya/core/tensor/Tensor2D.hpp>
 #include <alya/core/memory/Device.hpp>
 #include <alya/core/precision/PrecisonTypes.cuh>
@@ -28,14 +29,14 @@ class AdamW : public internal::optimizer<P> {
         bool init = false;
     };
 
-    std::unordered_map<Layer<P>*, State> state;
+    std::unordered_map<TrainableLayer<P, 2, 2, 2>*, State> state;
 
     computeT learningRate, beta1, beta2, epsilon;
 
 public:
     AdamW(computeT learningRate, computeT weightDecay, computeT beta1 = computeT(0.9), computeT beta2 = computeT(0.999), computeT epsilon = computeT(1e-8)) : internal::optimizer<P>(learningRate, weightDecay), beta1(beta1), beta2(beta2), epsilon(epsilon) {}
 
-    void step(Layer<P>& layer) override {
+    void step(TrainableLayer<P, 2, 2, 2, 2>& layer) override {
         if(layer.getWeights().device().type == DeviceType::CPU) {
             stepCpu(layer);
         } else {
@@ -44,7 +45,7 @@ public:
     }
 
 private:
-    void stepCpu(Layer<P>& layer) {
+    void stepCpu(TrainableLayer<P, 2, 2, 2, 2>& layer) {
         auto& s= state[&layer];
 
         if(!s.init) {
@@ -93,7 +94,7 @@ private:
         layer.getBias().subtractInplace(mhatB.divideInplace(vhatB.sqrtInplace().scalarAdd(epsilon)).scalarScale(this -> lr));
     }
 
-    void stepGpu(Layer<P>& layer) {
+    void stepGpu(TrainableLayer<P, 2, 2, 2, 2>& layer) {
         stepCpu(layer);
     }
 };

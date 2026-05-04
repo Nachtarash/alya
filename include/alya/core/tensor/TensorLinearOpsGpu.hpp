@@ -15,6 +15,8 @@ concept TensorLike = requires(X x, const X cx) {
     typename X::computeT;
 
     { cx.size() } -> std::convertible_to<size_t>;
+    { cx.lastDim() } -> std::convertible_to<size_t>;
+    { cx.outerDim() } -> std::convertible_to<size_t>;
     { x.gpuData() };
     { cx.gpuData() };
     { cx.emptyLike() } -> std::same_as<X>;
@@ -169,6 +171,9 @@ template <TensorLike TensorType>
 TensorType& scalarSubtractInplaceGpu(TensorType& A, const typename TensorType::computeT scalarV) {
     return scalarInplace<TensorType, SubOp<typename TensorType::storageT>>(A, scalarV);
 }
+
+template <TensorLike TensorType>
+TensorType multiplyLastAxisMaskGpu(const TensorType& A, const TensorType& mask);
 
 template <TensorLike TensorType>
 typename TensorType::storageT normGpu(const TensorType& A);

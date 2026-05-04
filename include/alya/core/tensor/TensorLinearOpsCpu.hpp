@@ -18,6 +18,8 @@ concept TensorLike = requires(X x, const X cx) {
     typename X::computeT;
 
     { cx.size() } -> std::convertible_to<size_t>;
+    { cx.lastDim() } -> std::convertible_to<size_t>;
+    { cx.outerDim() } -> std::convertible_to<size_t>;
     { x.cpuData() };
     { cx.cpuData() };
     { cx.emptyLike() } -> std::same_as<X>;
@@ -534,6 +536,29 @@ size_t argMaxCpu(const TensorType& A) {
     }
 
     return idx;
+}
+
+template <TensorLike TensorType>
+TensorType multiplyLastAxisMaskCpu(const TensorType& A, const TensorType& mask) {
+    using storageT = typename TensorType::storageT;
+    using computeT = typename TensorType::computeT;
+
+    TensorType out = A.emptyLike();
+
+    const storageT* a = A.cpuData();
+    const storageT* m = mask.cpuData();
+    storageT* o = out.cpuData();
+
+    for(size_t i = 0; i < A.outerDim(); i++) {
+        for(size_t j = 0; j < A.lastDim(); j++) {
+            computeT aVal = toCompute(a[i * A.lastDim() + j]);
+            computeT mVal = toCompute(m[j]);
+
+            o[i * A.lastDim() + j] = toStorage<storageT>(aVal * mVal);
+        }
+    }
+
+    return out;
 }
 
 template <TensorLike TensorType>

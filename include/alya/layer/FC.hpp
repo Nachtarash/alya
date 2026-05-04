@@ -3,9 +3,9 @@
 #include <cstddef>
 #include <type_traits>
 
-#include <alya/core/tensor/Tensor.hpp>
+#include <alya/core/tensor/Tensor2D.hpp>
 #include <alya/core/memory/Device.hpp>
-#include <alya/layer/LayerBase.hpp>
+#include <alya/layer/TrainableLayer.hpp>
 #include <alya/activation/ActivationCpu.hpp>
 #include <alya/layer/LayerCaches.hpp>
 #include <alya/core/precision/PrecisonTypes.cuh>
@@ -21,7 +21,7 @@ namespace alya {
 /// @note Input shape: [batchsize, featuresIn]
 /// @note Output shape: [batchsize, featuresOut]
 template <typename P, template <typename> class ActOp>
-class FC : public Layer<P> {
+class FC : public TrainableLayer<P, 2, 2, 2, 2> {
 private:
     using storageT = typename Precision<P>::storageT;
     using ActOpT = ActOp<storageT>;

@@ -3,7 +3,7 @@
 #include <vector>
 
 #include <alya/layer/LayerBase.hpp>
-#include <alya/layer/Dropout.hpp>
+#include <alya/layer/TrainableLayer.hpp>
 #include <alya/core/tensor/Tensor2D.hpp>
 #include <alya/core/memory/Device.hpp>
 #include <alya/optimizer/Optimizer.hpp>
@@ -17,13 +17,12 @@ namespace alya {
 template <typename T>
 class MLP {
 private:
-    bool training;
-
-    std::vector<Layer<T>*> layers;
-    std::vector<Dropout<T>*> drops;
+    std::vector<Layer<T, 2, 2>*> layers;
+    std::vector<TrainableLayer<T, 2, 2, 2, 2>*> trainableLayers;
 
 public:
-    const std::vector<Layer<T>*>& getLayers() const { return layers; }
+    const std::vector<TrainableLayer<T, 2, 2, 2, 2>*>& getTrainableLayers() const { return trainableLayers; }
+    const std::vector<Layer<T, 2, 2>*>& getLayers() const { return layers; }
 
     void setDevice(const Device& dev) {
         for(auto* layer : layers) {
@@ -31,36 +30,27 @@ public:
         }
     }
 
-    /// @brief adds an FC to MLP
-    /// @param layer FC layer
-    /// @attention Is temporary at its use at the moment/ not fully build for support all future layertypes
-    void addLayer(Layer<T>* layer) {
+    /// @brief adds Layer to MLP
+    /// @param layer Non trainable layer
+    void addLayer(Layer<T, 2, 2>* layer) {
         layers.push_back(layer);
     }
 
-    /// @brief adds an Dropout to MLP
-    /// @param layer Dropout layer
-    /// @attention Is an temporary solution
-    void addDropout(Dropout<T>* drop) {
-        drops.push_back(drop);
+    void addTrainableLayer(TrainableLayer<T, 2, 2, 2, 2>* trainablelayer) {
+        layers.push_back(trainablelayer);
+        trainableLayers.push_back(trainablelayer);
     }
 
     /// @brief Performs forward-pass on all FC in MLP
     /// @param input Tensor with input-data
     /// @param isTraining flag for dropout to know wenn to compute mask
-    /// @attention isTraining flag is not the final solution
     Tensor<T, 2> forward(const Tensor<T, 2>& input, bool isTraining) {
         Tensor<T, 2> out = input;
-        training = isTraining;
 
         for(auto* layer : layers) {
+            layer -> setTraining(isTraining);
+            
             out = layer -> forward(out);
-
-            for(auto* d : drops) {
-                if(d -> getTargetLayer() == layer) {
-                    d -> forward(isTraining);
-                }
-            }
         }
 
         return out;
@@ -72,12 +62,6 @@ public:
         Tensor<T, 2> grad = gradOutput;
 
         for(int i = layers.size() - 1; i >= 0; i--) {
-            for(auto* d : drops) {
-                if(d -> getTargetLayer() == layers[i]) {
-                    d -> backward(grad);
-                }
-            }
-
             grad = layers[i] -> backward(grad);
         }
     }
@@ -85,7 +69,7 @@ public:
     /// @brief Performs weights/bias update
     /// @param opt Optimizer who should perform the updates
     void step(internal::optimizer<T>& opt) {
-        for(auto& layer : layers) {
+        for(auto& layer : trainableLayers) {
             opt.step(*layer);
         }
     }
